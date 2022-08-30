@@ -1,0 +1,14 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+pyyaml
+torch==1.11
+torchvision 
+gdown
+numpy
+six
+requests
+imgaug
+lmdb
+opencv-python
+matplotlib
+prefetch_generator
+einops
