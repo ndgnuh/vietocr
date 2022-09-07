@@ -11,10 +11,10 @@ def unidecode_string(s, vocab, max_iteration=10):
     prev_i = 0
     n = len(s)
     prev_s = None
-    print("==============================")
-    print("String:", s)
+    # print("==============================")
+    # print("String:", s)
     while True:
-        print(s)
+        # print(s)
         # If previous string is the same, return
         if prev_s == s:
             return s
@@ -26,7 +26,7 @@ def unidecode_string(s, vocab, max_iteration=10):
             # Replace with char inside vocab
             if c not in vocab:
                 all_in_vocab = False
-                print('- char', c)
+                # print('- char', c)
                 replacement = custom_mapping.get(c, unidecode.unidecode(c))
                 if any([r not in vocab for r in replacement]):
                     print(
@@ -41,7 +41,7 @@ def unidecode_string(s, vocab, max_iteration=10):
 
         if all_in_vocab:
             break
-    print("Result:", s)
+    # print("Result:", s)
     return s
 
 
@@ -51,22 +51,24 @@ class Vocab():
         self.go = 1
         self.eos = 2
         self.mask_token = 3
+        self.other = 4
 
         self.chars = chars
 
-        self.c2i = {c: i+4 for i, c in enumerate(chars)}
+        self.c2i = {c: i+5 for i, c in enumerate(chars)}
 
-        self.i2c = {i+4: c for i, c in enumerate(chars)}
+        self.i2c = {i+5: c for i, c in enumerate(chars)}
 
         self.i2c[0] = '<pad>'
         self.i2c[1] = '<sos>'
         self.i2c[2] = '<eos>'
         self.i2c[3] = '*'
+        self.i2c[4] = '<unk>'
 
     def encode(self, chars):
         vocab = self.chars
         chars = unidecode_string(chars, vocab)
-        return [self.go] + [self.c2i[c] for c in chars] + [self.eos]
+        return [self.go] + [self.c2i.get(c, self.other) for c in chars] + [self.eos]
 
     def decode(self, ids):
         first = 1 if self.go in ids else 0
@@ -75,7 +77,7 @@ class Vocab():
         return sent
 
     def __len__(self):
-        return len(self.c2i) + 4
+        return len(self.c2i) + 5
 
     def batch_decode(self, arr):
         texts = [self.decode(ids) for ids in arr]

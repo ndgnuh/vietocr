@@ -12,3 +12,4 @@ opencv-python
 matplotlib
 prefetch_generator
 einops
+unidecode
