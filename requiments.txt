@@ -1,6 +1,5 @@
---extra-index-url https://download.pytorch.org/whl/cpu
 pyyaml
-torch==1.11
+torch
 torchvision 
 gdown
 numpy
