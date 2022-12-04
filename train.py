@@ -2,8 +2,11 @@ import argparse
 import yaml
 import json
 
+from os import path
+from pprint import pprint
 from vietocr.model.trainer import Trainer
 from vietocr.tool.config import Cfg
+from vietocr.tool.dict_utils import munchify, merge_dict
 
 
 def read_json(fpath: str):
@@ -18,19 +21,22 @@ def read_yaml(fpath: str):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', required=True, help='see example at ')
-    parser.add_argument('--checkpoint', required=False, help='your checkpoint')
-    parser.add_argument('--data-config', required=False,
-                        help='override dataset configuration')
+    # keeping the option as --config
+    parser.add_argument('-c', '--config',
+                        action="append",
+                        dest="configs",
+                        required=True,
+                        default=[path.join("config", "base.yml")],
+                        help="config files, latter ones will merge/override the formers")
+    parser.add_argument('--checkpoint',
+                        dest="checkpoint",
+                        required=False,
+                        help='your checkpoint')
 
     args = parser.parse_args()
-    config = Cfg.load_config_from_file(args.config)
-
-    if args.data_config is not None:
-        data_config = read_yaml(args.data_config)
-        print(data_config)
-        config['dataset'] = data_config['dataset']
-
+    configs = [read_yaml(config_file) for config_file in args.configs]
+    config = merge_dict(*configs)
+    pprint(config)
     trainer = Trainer(config)
 
     if args.checkpoint:

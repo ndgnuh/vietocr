@@ -1,4 +1,5 @@
 {
 	"nn.patcher": "vietocr/tool/patcher.py",
-	"nn.reshape": "vietocr/model/reshape.py"
+	"nn.reshape": "vietocr/model/reshape.py",
+	"utils.dict": "vietocr/tool/dict_utils.py"
 }

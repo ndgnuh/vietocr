@@ -27,7 +27,7 @@ import time
 
 
 class Trainer():
-    def __init__(self, config, pretrained=True, augmentor=ImgAugTransform()):
+    def __init__(self, config, augmentor=ImgAugTransform()):
 
         self.config = config
         self.model, self.vocab = build_model(config)
@@ -56,7 +56,7 @@ class Trainer():
         if logger:
             self.logger = Logger(logger)
 
-        if pretrained:
+        if config.get('pretrained', None) is not None:
             weight_file = download_weights(
                 **config['pretrain'], quiet=config['quiet'])
             self.load_weights(weight_file)
