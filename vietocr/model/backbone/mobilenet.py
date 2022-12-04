@@ -3,6 +3,7 @@ from ...tool.patcher import (
     change_layer_param,
     change_layer_type
 )
+from ..reshape import Reshape, Permute
 from torch import nn
 from torchvision import models
 from dataclasses import dataclass
@@ -36,20 +37,29 @@ class PatchStride:
         return True
 
 
-# class Mobilenet(nn.Module):
-#     def __init__(self, *args, hidden, dropout, **kwargs):
-#         super().__init__()
-#         self.dropout = nn.Dropout(dropout)
-#         self.last_conv_1x1 = nn.Conv2d(512, hidden, 1)
 def mobilenet_v3_large(*args, hidden, dropout, **kwargs):
     patch = PatchStride(skip=2)
     net = models.mobilenet_v3_large(num_classes=1).features
     net = patch_net(net, patch.patch, patch.patch_condition)
+    net = nn.Sequential(
+        net,
+        nn.Dropout(dropout),
+        nn.Conv2d(960, hidden, 1),
+        Reshape('n,c,h,w->n,c,h*w'),
+        Permute('n,c,s->s,n,c')
+    )
     return net
 
 
-def mobilenet_v3_small(*args, **kwargs):
+def mobilenet_v3_small(*args, hidden, dropout, **kwargs):
     patch = PatchStride(skip=2)
     net = models.mobilenet_v3_large(num_classes=1).features
     net = patch_net(net, patch.patch, patch.patch_condition)
+    net = nn.Sequential(
+        net,
+        nn.Dropout(dropout),
+        nn.LazyConv2d(hidden, 1),
+        Reshape('n,c,h,w->n,c,h*w'),
+        Permute('n,c,s->s,n,c')
+    )
     return net
