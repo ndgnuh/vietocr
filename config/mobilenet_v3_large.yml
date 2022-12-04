@@ -1,0 +1,20 @@
+backbone: mobilenet_v3_large
+cnn:
+  pretrained: false
+  dropout: 0.1
+  hidden: 256
+
+pretrain: {}
+quiet: {}
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
+
+optimizer:
+    max_lr: 0.001
+    pct_start: 0.1

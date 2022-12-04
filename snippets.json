@@ -1,0 +1,4 @@
+{
+	"nn.patcher": "vietocr/tool/patcher.py",
+	"nn.reshape": "vietocr/model/reshape.py"
+}
