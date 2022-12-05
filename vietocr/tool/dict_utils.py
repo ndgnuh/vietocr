@@ -4,15 +4,15 @@ from copy import copy as mcopy
 
 
 class AttrDict(dict):
-    def __init__(self, *arg, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__dict__ = self
 
 
-def munchify(d: dict, max_depth=100, depth=0, copy=False):
+def munchify(d: dict, max_depth=100, depth=0, copy=False, sink=AttrDict):
     if depth > max_depth:
         print("Maximum recursion depth reached, returning base dict")
-        return base
+        return d
 
     if copy:
         d = mcopy.copy(d)
@@ -20,11 +20,12 @@ def munchify(d: dict, max_depth=100, depth=0, copy=False):
     for k, v in d.items():
         if isinstance(v, dict):
             d[k] = munchify(v,
+                            sink=sink,
                             copy=copy,
                             max_depth=max_depth,
                             depth=depth+1)
 
-    return AttrDict(d)
+    return sink(d)
 
 
 def merge_dict(base, *updates, max_depth=100, depth=0, copy=False):
