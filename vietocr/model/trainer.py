@@ -20,6 +20,7 @@ import torchvision
 
 from vietocr.tool.utils import compute_accuracy
 from PIL import Image
+from tqdm import tqdm
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -96,7 +97,7 @@ class Trainer():
         best_acc = 0
 
         data_iter = iter(self.train_gen)
-        for i in range(self.num_iters):
+        for i in tqdm(range(self.num_iters), "training"):
             self.iter += 1
 
             start = time.time()
@@ -148,7 +149,7 @@ class Trainer():
         total_loss = []
 
         with torch.no_grad():
-            for step, batch in enumerate(self.valid_gen):
+            for step, batch in tqdm(enumerate(self.valid_gen), "validation"):
                 batch = self.batch_to_device(batch)
                 img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
                     'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
