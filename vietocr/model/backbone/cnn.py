@@ -3,6 +3,12 @@ from torch import nn
 
 import vietocr.model.backbone.vgg as vgg
 from vietocr.model.backbone.resnet import Resnet50
+from vietocr.model.backbone.svtr import (
+    svtr_b,
+    svtr_l,
+    svtr_s,
+    svtr_t
+)
 from vietocr.model.backbone.mobilenet import (
     mobilenet_v3_large,
     mobilenet_v3_small
@@ -14,6 +20,10 @@ backbone_by_names = {
     'resnet50': Resnet50,
     'mobilenet_v3_large': mobilenet_v3_large,
     'mobilenet_v3_small': mobilenet_v3_small,
+    "svtr_b": svtr_b,
+    "svtr_l": svtr_l,
+    "svtr_s": svtr_s,
+    "svtr_t": svtr_t
 }
 
 
@@ -24,7 +34,11 @@ class CNN(nn.Module):
         self.model = backbone_by_names[backbone](**kwargs)
 
     def forward(self, x):
-        return self.model(x)
+        out = self.model(x)
+        # from icecream import install
+        # install()
+        # ic(out.shape)
+        return out
 
     def freeze(self):
         for name, param in self.model.features.named_parameters():

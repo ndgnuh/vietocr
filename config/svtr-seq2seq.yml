@@ -1,0 +1,24 @@
+pretrain: 
+    id_or_url: 1nTKlEog9YFK74kPyX0qLwCWi60_YHHk4
+    md5: efcabaa6d3adfca8e52bda2fd7d2ee04
+    cached: /tmp/tranformerorc.pth
+
+# url or local path
+weights: https://drive.google.com/uc?id=1nTKlEog9YFK74kPyX0qLwCWi60_YHHk4
+
+backbone: svtr_t
+cnn:
+  image_size: [32, 512]
+  output_size: 256
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
+
+optimizer:
+    max_lr: 0.001
+    pct_start: 0.1

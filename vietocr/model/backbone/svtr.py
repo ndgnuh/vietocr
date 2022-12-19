@@ -68,16 +68,22 @@ class SVTREmbedding(nn.Module):
             hidden_size=hidden_size,
             patch_size=patch_size
         )
+        self.image_size = image_size
         b, c, h, w = get_output_size(self.patch_embedding, (1, 3, *image_size))
         self.to_seq = Rearrange("b c h w -> b (h w) c")
         self.positional_embedding = PositionalEmbedding((h * w), c)
         self.to_img = Rearrange("b (h w) c -> b c h w", h=h, w=w)
 
     def forward(self, image):
+        h, w = self.image_size
+        oh, ow = image.shape[-2:]
+        image = image[..., :h, :w]
+        image = F.pad(image, (0, w-ow, 0, h-oh))
         patch_embedding = self.patch_embedding(image)
         positional_embedding = self.positional_embedding()
         patch_embedding = self.to_seq(patch_embedding)
-        embedding = patch_embedding + positional_embedding
+        b, p, d = patch_embedding.shape
+        embedding = patch_embedding + positional_embedding[:, :p, :]
         embedding = self.to_img(embedding)
         return embedding
 
@@ -260,15 +266,16 @@ class SVTRStage(nn.Sequential):
 class SVTR(nn.Sequential):
 
     def __init__(self,
-                 num_classes: int,
                  image_size: Tuple[int, int],
                  hidden_sizes: List[int],
+                 output_size: int,
                  permutations: List[List[int]],
                  num_attention_heads: List[int]):
         super().__init__()
         # SVTR Embedding
         c, h, w = 3, *image_size
         embedding = SVTREmbedding(image_size, hidden_sizes[0])
+        self.output_size = output_size
 
         # SVTR Stages
         stages = []
@@ -295,13 +302,14 @@ class SVTR(nn.Sequential):
                 b, c, h, w = get_output_size(stage, (1, c, h, w))
 
         # Classification
-        fc = nn.Linear(hidden_sizes[-1], num_classes)
+        fc = nn.Linear(hidden_sizes[-1], self.output_size)
 
         # add mods
         self.add_module("svtr_embedding", embedding)
         for i, stage in enumerate(stages):
             self.add_module(f"stage_{i:02}", stage)
         self.add_module("fc", fc)
+        self.add_module("batch_second", Rearrange("b t h -> t b h"))
 
 # Model configurations
 # From https://arxiv.org/pdf/2205.00159.pdf
@@ -332,7 +340,7 @@ def svtr_t(image_size, output_size):
     heads = [2, 4, 8]
     hidden_sizes = [64, 128, 256, 192]
     return SVTR(image_size=image_size,
-                num_classes=output_size,
+                output_size=output_size,
                 permutations=permutations,
                 num_attention_heads=heads,
                 hidden_sizes=hidden_sizes)
@@ -347,7 +355,7 @@ def svtr_s(image_size, output_size):
     heads = [3, 6, 8]
     hidden_sizes = [96, 192, 256, 192]
     return SVTR(image_size=image_size,
-                num_classes=output_size,
+                output_size=output_size,
                 permutations=permutations,
                 num_attention_heads=heads,
                 hidden_sizes=hidden_sizes)
@@ -362,7 +370,7 @@ def svtr_b(image_size, output_size):
     heads = [4, 8, 12]
     hidden_sizes = [128, 256, 384, 256]
     return SVTR(image_size=image_size,
-                num_classes=output_size,
+                output_size=output_size,
                 permutations=permutations,
                 num_attention_heads=heads,
                 hidden_sizes=hidden_sizes)
@@ -377,7 +385,7 @@ def svtr_l(image_size, output_size):
     heads = [6, 8, 16]
     hidden_sizes = [192, 256, 512, 384]
     return SVTR(image_size=image_size,
-                num_classes=output_size,
+                output_size=output_size,
                 permutations=permutations,
                 num_attention_heads=heads,
                 hidden_sizes=hidden_sizes)
