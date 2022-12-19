@@ -5,6 +5,7 @@ import numpy as np
 import uuid
 import requests
 
+
 def download_weights(id_or_url, cached=None, md5=None, quiet=False):
     if id_or_url.startswith('http'):
         url = id_or_url
@@ -15,10 +16,12 @@ def download_weights(id_or_url, cached=None, md5=None, quiet=False):
 
 
 def download_config(id):
-    url = 'https://raw.githubusercontent.com/pbcquoc/vietocr/master/config/{}'.format(id)
+    url = 'https://raw.githubusercontent.com/ndgnuh/vietocr/master/config/{}'.format(
+        id)
     r = requests.get(url)
     config = yaml.safe_load(r.text)
     return config
+
 
 def compute_accuracy(ground_truth, predictions, mode='full_sequence'):
     """
@@ -71,6 +74,7 @@ def compute_accuracy(ground_truth, predictions, mode='full_sequence'):
             else:
                 avg_accuracy = 0
     else:
-        raise NotImplementedError('Other accuracy compute mode has not been implemented')
+        raise NotImplementedError(
+            'Other accuracy compute mode has not been implemented')
 
     return avg_accuracy

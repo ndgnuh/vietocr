@@ -3,6 +3,7 @@ from os import path
 from vietocr.tool.utils import download_config
 
 url_config = {
+    'svtr-t': 'svtr-t-seq2seq.yml',
     'vgg_transformer': 'vgg-transformer.yml',
     'resnet_transformer': 'resnet_transformer.yml',
     'resnet_fpn_transformer': 'resnet_fpn_transformer.yml',
