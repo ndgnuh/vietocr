@@ -78,8 +78,8 @@ class Trainer():
             len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
 
         transforms = None
-        if self.image_aug:
-            transforms = augmentor
+        # if self.image_aug:
+        #     transforms = augmentor
 
         self.train_gen = self.data_gen('train_{}'.format(self.dataset_name),
                                        self.data_root, self.train_annotation, self.masked_language_model, transform=transforms)
@@ -190,7 +190,7 @@ class Trainer():
             pred_sent = self.vocab.batch_decode(translated_sentence.tolist())
             actual_sent = self.vocab.batch_decode(batch['tgt_output'].tolist())
 
-            img_files.extend(batch['filenames'])
+            # img_files.extend(batch['filenames'])
 
             pred_sents.extend(pred_sent)
             actual_sents.extend(actual_sent)
@@ -318,14 +318,13 @@ class Trainer():
         batch = {
             'img': img, 'tgt_input': tgt_input,
             'tgt_output': tgt_output, 'tgt_padding_mask': tgt_padding_mask,
-            'filenames': batch['filenames']
+            # 'filenames': batch['filenames']
         }
 
         return batch
 
     def data_gen(self, lmdb_path, data_root, annotation, masked_language_model=True, transform=None):
-        dataset = OCRDataset(lmdb_path=lmdb_path,
-                             root_dir=data_root, annotation_path=annotation,
+        dataset = OCRDataset(index=os.path.join(data_root, annotation),
                              vocab=self.vocab, transform=transform,
                              image_height=self.config['dataset']['image_height'],
                              image_min_width=self.config['dataset']['image_min_width'],
@@ -337,8 +336,8 @@ class Trainer():
         gen = DataLoader(
             dataset,
             batch_size=self.batch_size,
-            sampler=sampler,
-            collate_fn=collate_fn,
+            # sampler=sampler,
+            # collate_fn=collate_fn,
             shuffle=False,
             drop_last=False,
             **self.config['dataloader'])
