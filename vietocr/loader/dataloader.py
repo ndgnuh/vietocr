@@ -171,8 +171,11 @@ def ensure_tensor(image):
     return torch.tensor(image)
 
 
-def pad_sequence(seq, max_length, pad):
+def pad_sequence(seq, max_length, pad, truncate=True):
     length = len(seq)
+    if truncate:
+        seq = seq[:max_length]
+        length = min(max_length, length)
     assert length <= max_length
     padding_length = max_length - length
     padded = seq + [pad] * padding_length
