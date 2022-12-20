@@ -1,10 +1,13 @@
 import argparse
 import yaml
 import json
+from icecream import install
 
 from os import path
 from pprint import pprint
 from vietocr.tool.dict_utils import merge_dict
+
+install()
 
 
 def read_json(fpath: str):
@@ -17,12 +20,18 @@ def read_yaml(fpath: str):
         return yaml.load(f, Loader=yaml.FullLoader)
 
 
-def train(config, checkpoint=None):
+def train(config, args):
     # Keep the script fast for other purpose
     from vietocr.model.trainer import Trainer
+
+
     trainer = Trainer(config)
 
-    if checkpoint is not None:
+    # Weight
+    if args.continue_weight is not None:
+        trainer.load_weights(args.continue_weight)
+
+    if args.checkpoint is not None:
         trainer.load_checkpoint(checkpoint)
 
     trainer.train()
@@ -75,10 +84,15 @@ def main():
         default=[path.join("config", "base.yml")],
         help="config files, latter ones will merge/override the formers"
     )
-    sp = parser.add_subparsers(dest='action')
+    sp = parser.add_subparsers(dest='action', required=True)
 
     # Train
     train_parser = sp.add_parser('train')
+    train_parser.add_argument(
+        '--continue',
+        dest="continue_weight",
+        required=False,
+        help='Continue training from this weight')
     train_parser.add_argument(
         '--checkpoint',
         dest="checkpoint",
@@ -98,8 +112,9 @@ def main():
     action = args.action
     configs = [read_yaml(config_file) for config_file in args.configs]
     config = merge_dict(*configs)
+
     if action == "train":
-        train(config, args.checkpoint)
+        train(config, args)
     elif action == "export":
         export(config, args.weight, "test.onnx")
     elif action == "dump":
