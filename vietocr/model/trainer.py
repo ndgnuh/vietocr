@@ -194,6 +194,8 @@ class Trainer():
 
             pred_sents.extend(pred_sent)
             actual_sents.extend(actual_sent)
+            print(f"= {actual_sent}")
+            print(f"< {pred_sent}")
 
             if sample != None and len(pred_sents) > sample:
                 break
@@ -243,7 +245,7 @@ class Trainer():
             plt.figure()
             plt.imshow(img)
             plt.title('prob: {:.3f} - pred: {} - actual: {}'.format(prob,
-                      pred_sent, actual_sent), loc='left', fontdict=fontdict)
+                                                                    pred_sent, actual_sent), loc='left', fontdict=fontdict)
             plt.axis('off')
 
         plt.show()
@@ -324,7 +326,7 @@ class Trainer():
         return batch
 
     def data_gen(self, lmdb_path, data_root, annotation, masked_language_model=True, transform=None):
-        dataset = OCRDataset(index=os.path.join(data_root, annotation),
+        dataset = OCRDataset(index=annotation,
                              vocab=self.vocab, transform=transform,
                              image_height=self.config['dataset']['image_height'],
                              image_min_width=self.config['dataset']['image_min_width'],
