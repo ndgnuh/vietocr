@@ -203,6 +203,7 @@ class OCRDataset(IndexedImageFolder):
         image_height: int,
         image_min_width: int,
         image_max_width: int,
+        sequence_max_length: int
     ):
         super().__init__(index=index)
         self.index = index
@@ -211,6 +212,7 @@ class OCRDataset(IndexedImageFolder):
         self.image_height = image_height
         self.image_min_width = image_min_width
         self.image_max_width = image_max_width
+        self.sequence_max_length = sequence_max_length
 
     def split_annotation(self, line):
         splits = re.split(r"\s+", line.strip())
@@ -224,7 +226,7 @@ class OCRDataset(IndexedImageFolder):
         if self.transform is not None:
             image = self.transform(image)
 
-        target = self.vocab.encode(word, max_length=128)
+        target = self.vocab.encode(word, max_length=self.sequence_max_length)
         target_mask = [
             1 if i >= 4 else 0 for i in target
         ]

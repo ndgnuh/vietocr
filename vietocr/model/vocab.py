@@ -76,8 +76,12 @@ class Vocab():
         return [self.go] + seq + [self.eos]
 
     def decode(self, ids):
-        # first = ids.index(self.go) if self.go in ids else 0
-        # last = ids.index(self.eos) if self.eos in ids else None
+        last = ids.index(self.eos) if self.eos in ids else None
+        first = ids.index(self.go) if self.go in ids else 0
+        if last is not None:
+            ids = ids[first:last]
+        else:
+            ids = ids[first:]
         sent = ''.join([self.i2c[i] for i in ids if i > 4])
         return sent
 
