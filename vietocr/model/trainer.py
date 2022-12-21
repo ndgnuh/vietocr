@@ -1,45 +1,32 @@
-from vietocr.optim.optim import ScheduledOptim
 from vietocr.optim.labelsmoothingloss import LabelSmoothingLoss
-from torch.optim import Adam, SGD, AdamW
-from torch import nn
 from vietocr.tool.translate import build_model
-from vietocr.tool.translate import translate, batch_translate_beam_search
 from vietocr.tool.utils import download_weights
 from vietocr.tool.logger import Logger
 from vietocr.loader.aug import ImgAugTransform
+from vietocr.loader.dataloader import OCRDataset
 
-import yaml
 import torch
-from vietocr.loader.dataloader_v1 import DataGen
-from vietocr.loader.dataloader import OCRDataset, ClusterRandomSampler, Collator
-from torch.utils.data import DataLoader
-from einops import rearrange
-from torch.optim.lr_scheduler import CosineAnnealingLR, CyclicLR, OneCycleLR
-
-import torchvision
-
-from vietocr.tool.utils import compute_accuracy
-from PIL import Image
+import random
+from itertools import cycle
 from tqdm import tqdm
-import numpy as np
-import os
-import matplotlib.pyplot as plt
-import time
+from torch import nn
+from torch.utils.data import DataLoader
+from torch.nn.utils import clip_grad_norm_
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import OneCycleLR
 
 
-class Trainer():
-    def __init__(self, config, augmentor=ImgAugTransform()):
-
+class Trainer:
+    def __init__(self, config):
         self.config = config
         self.model, self.vocab = build_model(config)
-
         self.device = config['device']
         self.num_iters = config['trainer']['iters']
         self.beamsearch = config['predictor']['beamsearch']
 
         self.data_root = config['dataset']['data_root']
         self.train_annotation = config['dataset']['train_annotation']
-        self.valid_annotation = config['dataset']['valid_annotation']
+        self.val_annotation = config['dataset']['valid_annotation']
         self.dataset_name = config['dataset']['name']
 
         self.batch_size = config['trainer']['batch_size']
@@ -68,316 +55,162 @@ class Trainer():
                                betas=(0.9, 0.98), eps=1e-09)
         self.scheduler = OneCycleLR(
             self.optimizer, total_steps=self.num_iters, **config['optimizer'])
-#        self.optimizer = ScheduledOptim(
-#            Adam(self.model.parameters(), betas=(0.9, 0.98), eps=1e-09),
-#            #config['transformer']['d_model'],
-#            512,
-#            **config['optimizer'])
 
-        self.criterion = LabelSmoothingLoss(
-            len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
+        self.criterion = nn.CrossEntropyLoss(
+            ignore_index=self.vocab.pad,
+            label_smoothing=0.1
+        )
+        # self.criterion = LabelSmoothingLoss(
+        #     len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
 
-        transforms = None
-        # if self.image_aug:
-        #     transforms = augmentor
+        transform = None
+        if self.image_aug:
+            transform = ImgAugTransform()
 
-        self.train_gen = self.data_gen('train_{}'.format(self.dataset_name),
-                                       self.data_root, self.train_annotation, self.masked_language_model, transform=transforms)
-        if self.valid_annotation:
-            self.valid_gen = self.data_gen('valid_{}'.format(self.dataset_name),
-                                           self.data_root, self.valid_annotation, masked_language_model=False)
+        self.train_loader = self.setup_dataloader(
+            self.train_annotation,
+            transform
+        )
+        if self.val_annotation:
+            self.val_loader = self.setup_dataloader(self.val_annotation)
 
         self.train_losses = []
 
-    def train(self):
-        total_loss = 0
-
-        total_loader_time = 0
-        total_gpu_time = 0
-        best_acc = 0
-
-        data_iter = iter(self.train_gen)
-        for i in tqdm(range(self.num_iters), "training"):
-            self.iter += 1
-
-            start = time.time()
-
-            try:
-                batch = next(data_iter)
-            except StopIteration:
-                data_iter = iter(self.train_gen)
-                batch = next(data_iter)
-
-            total_loader_time += time.time() - start
-
-            start = time.time()
-            loss = self.step(batch)
-            total_gpu_time += time.time() - start
-
-            total_loss += loss
-            self.train_losses.append((self.iter, loss))
-
-            if self.iter % self.print_every == 0:
-                info = 'iter: {:06d} - train loss: {:.3f} - lr: {:.2e} - load time: {:.2f} - gpu time: {:.2f}'.format(self.iter,
-                                                                                                                      total_loss /
-                                                                                                                      self.print_every, self.optimizer.param_groups[
-                                                                                                                          0]['lr'],
-                                                                                                                      total_loader_time, total_gpu_time)
-
-                total_loss = 0
-                total_loader_time = 0
-                total_gpu_time = 0
-                print(info)
-                self.logger.log(info)
-
-            if self.valid_annotation and self.iter % self.valid_every == 0:
-                val_loss = self.validate()
-                acc_full_seq, acc_per_char = self.precision(self.metrics)
-
-                info = 'iter: {:06d} - valid loss: {:.3f} - acc full seq: {:.4f} - acc per char: {:.4f}'.format(
-                    self.iter, val_loss, acc_full_seq, acc_per_char)
-                print(info)
-                self.logger.log(info)
-
-                if acc_full_seq > best_acc:
-                    self.save_weights(self.export_weights)
-                    best_acc = acc_full_seq
-
-    def validate(self):
-        self.model.eval()
-
-        total_loss = []
-
-        with torch.no_grad():
-            for step, batch in tqdm(enumerate(self.valid_gen), "validation"):
-                batch = self.batch_to_device(batch)
-                img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
-                    'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
-
-                outputs = self.model(img, tgt_input, tgt_padding_mask)
-#                loss = self.criterion(rearrange(outputs, 'b t v -> (b t) v'), rearrange(tgt_output, 'b o -> (b o)'))
-
-                outputs = outputs.flatten(0, 1)
-                tgt_output = tgt_output.flatten()
-                loss = self.criterion(outputs, tgt_output)
-
-                total_loss.append(loss.item())
-
-                del outputs
-                del loss
-
-        total_loss = np.mean(total_loss)
-        self.model.train()
-
-        return total_loss
-
-    def predict(self, sample=None):
-        pred_sents = []
-        actual_sents = []
-        img_files = []
-        prob = None
-
-        for batch in self.valid_gen:
-            batch = self.batch_to_device(batch)
-
-            if self.beamsearch:
-                translated_sentence = batch_translate_beam_search(
-                    batch['img'], self.model)
-                prob = None
-            else:
-                translated_sentence, prob = translate(batch['img'], self.model)
-
-            pred_sent = self.vocab.batch_decode(translated_sentence.tolist())
-            actual_sent = self.vocab.batch_decode(batch['tgt_output'].tolist())
-
-            # img_files.extend(batch['filenames'])
-
-            pred_sents.extend(pred_sent)
-            actual_sents.extend(actual_sent)
-            print(f"= {actual_sent}")
-            print(f"< {pred_sent}")
-
-            if sample != None and len(pred_sents) > sample:
-                break
-
-        return pred_sents, actual_sents, img_files, prob
-
-    def precision(self, sample=None):
-
-        pred_sents, actual_sents, _, _ = self.predict(sample=sample)
-
-        acc_full_seq = compute_accuracy(
-            actual_sents, pred_sents, mode='full_sequence')
-        acc_per_char = compute_accuracy(
-            actual_sents, pred_sents, mode='per_char')
-
-        return acc_full_seq, acc_per_char
-
-    def visualize_prediction(self, sample=16, errorcase=False, fontname='serif', fontsize=16):
-
-        pred_sents, actual_sents, img_files, probs = self.predict(sample)
-
-        if errorcase:
-            wrongs = []
-            for i in range(len(img_files)):
-                if pred_sents[i] != actual_sents[i]:
-                    wrongs.append(i)
-
-            pred_sents = [pred_sents[i] for i in wrongs]
-            actual_sents = [actual_sents[i] for i in wrongs]
-            img_files = [img_files[i] for i in wrongs]
-            probs = [probs[i] for i in wrongs]
-
-        img_files = img_files[:sample]
-
-        fontdict = {
-            'family': fontname,
-            'size': fontsize
-        }
-
-        for vis_idx in range(0, len(img_files)):
-            img_path = img_files[vis_idx]
-            pred_sent = pred_sents[vis_idx]
-            actual_sent = actual_sents[vis_idx]
-            prob = probs[vis_idx]
-
-            img = Image.open(open(img_path, 'rb'))
-            plt.figure()
-            plt.imshow(img)
-            plt.title('prob: {:.3f} - pred: {} - actual: {}'.format(prob,
-                                                                    pred_sent, actual_sent), loc='left', fontdict=fontdict)
-            plt.axis('off')
-
-        plt.show()
-
-    def visualize_dataset(self, sample=16, fontname='serif'):
-        n = 0
-        for batch in self.train_gen:
-            for i in range(self.batch_size):
-                img = batch['img'][i].numpy().transpose(1, 2, 0)
-                sent = self.vocab.decode(batch['tgt_input'].T[i].tolist())
-
-                plt.figure()
-                plt.title('sent: {}'.format(sent),
-                          loc='center', fontname=fontname)
-                plt.imshow(img)
-                plt.axis('off')
-
-                n += 1
-                if n >= sample:
-                    plt.show()
-                    return
-
-    def load_checkpoint(self, filename):
-        checkpoint = torch.load(filename)
-
-        optim = ScheduledOptim(
-            Adam(self.model.parameters(), betas=(0.9, 0.98), eps=1e-09),
-            self.config['transformer']['d_model'], **self.config['optimizer'])
-
-        self.optimizer.load_state_dict(checkpoint['optimizer'])
-        self.model.load_state_dict(checkpoint['state_dict'])
-        self.iter = checkpoint['iter']
-
-        self.train_losses = checkpoint['train_losses']
-
-    def save_checkpoint(self, filename):
-        state = {'iter': self.iter, 'state_dict': self.model.state_dict(),
-                 'optimizer': self.optimizer.state_dict(), 'train_losses': self.train_losses}
-
-        path, _ = os.path.split(filename)
-        os.makedirs(path, exist_ok=True)
-
-        torch.save(state, filename)
-
-    def load_weights(self, filename):
-        state_dict = torch.load(
-            filename, map_location=torch.device(self.device))
-
-        for name, param in self.model.named_parameters():
-            if name not in state_dict:
-                print('{} not found'.format(name))
-            elif state_dict[name].shape != param.shape:
-                print('{} missmatching shape, required {} but found {}'.format(
-                    name, param.shape, state_dict[name].shape))
-                del state_dict[name]
-
-        self.model.load_state_dict(state_dict, strict=False)
-
-    def save_weights(self, filename):
-        path, _ = os.path.split(filename)
-        os.makedirs(path, exist_ok=True)
-
-        torch.save(self.model.state_dict(), filename)
-
-    def batch_to_device(self, batch):
-        img = batch['img'].to(self.device, non_blocking=True)
-        tgt_input = batch['tgt_input'].to(self.device, non_blocking=True)
-        tgt_output = batch['tgt_output'].to(self.device, non_blocking=True)
-        tgt_padding_mask = batch['tgt_padding_mask'].to(
-            self.device, non_blocking=True)
-
-        batch = {
-            'img': img, 'tgt_input': tgt_input,
-            'tgt_output': tgt_output, 'tgt_padding_mask': tgt_padding_mask,
-            # 'filenames': batch['filenames']
-        }
-
-        return batch
-
-    def data_gen(self, lmdb_path, data_root, annotation, masked_language_model=True, transform=None):
-        dataset = OCRDataset(index=annotation,
-                             vocab=self.vocab, transform=transform,
-                             image_height=self.config['dataset']['image_height'],
-                             image_min_width=self.config['dataset']['image_min_width'],
-                             image_max_width=self.config['dataset']['image_max_width'])
-
-        sampler = ClusterRandomSampler(dataset, self.batch_size, True)
-        collate_fn = Collator(masked_language_model)
-
-        gen = DataLoader(
+    def setup_dataloader(self, index_file_path, transform=None):
+        dataset = OCRDataset(
+            index=index_file_path,
+            vocab=self.vocab,
+            transform=transform,
+            image_height=self.config['dataset']['image_height'],
+            image_min_width=self.config['dataset']['image_min_width'],
+            image_max_width=self.config['dataset']['image_max_width']
+        )
+        loader = DataLoader(
             dataset,
             batch_size=self.batch_size,
-            # sampler=sampler,
-            # collate_fn=collate_fn,
-            shuffle=False,
-            drop_last=False,
-            **self.config['dataloader'])
+            ** self.config['dataloader']
+        )
+        # sampler=sampler,
+        # collate_fn=collate_fn,
+        # shuffle=False,
+        # drop_last=False,
+        # **self.config['dataloader'])
+        return loader
 
-        return gen
+    def train(self):
+        # Statistics
+        total_loss = 0
 
-    def data_gen_v1(self, lmdb_path, data_root, annotation):
-        data_gen = DataGen(data_root, annotation, self.vocab, 'cpu',
-                           image_height=self.config['dataset']['image_height'],
-                           image_min_width=self.config['dataset']['image_min_width'],
-                           image_max_width=self.config['dataset']['image_max_width'])
+        train_loader = cycle(self.train_loader)
+        for step in tqdm(range(self.num_iters), "Training"):
+            batch = next(train_loader)
+            total_loss = total_loss + self.train_step(batch)
+            # loss.backward()
+            # clip_grad_norm_(self.model.parameters(), 1)
+            # self.optimizer.step()
+            # self.scheduler.step()
 
-        return data_gen
+            if step > 0 and step % self.valid_every == 0:
+                metrics = self.valid()
+                self.print(
+                    f"Train loss: {total_loss / step:.2f}, Val loss: {metrics['val_loss']:.2f}, Char prec: {metrics['char_precision']:.2f}, Seq prec: {metrics['seq_precision']:.2f}"
+                )
+            #     print(f"accuracy {acc}")
+            # loss.backward()
 
-    def step(self, batch):
-        self.model.train()
+    def precision(self, predict, target, full_seq=False):
+        if full_seq:
+            return 1 if predict == target else 0
 
-        batch = self.batch_to_device(batch)
-        img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
-            'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
+        total = 0
+        n = len(target)
+        for p, t in zip(predict, target):
+            if p == t:
+                total += 1
 
-        outputs = self.model(
-            img, tgt_input, tgt_key_padding_mask=tgt_padding_mask)
-#        loss = self.criterion(rearrange(outputs, 'b t v -> (b t) v'), rearrange(tgt_output, 'b o -> (b o)'))
-        outputs = outputs.view(-1, outputs.size(2))  # flatten(0, 1)
-        tgt_output = tgt_output.view(-1)  # flatten()
+        return total / n
 
-        loss = self.criterion(outputs, tgt_output)
+    def batch_precision(self, prediction, target, full_seq=False):
+        precision = [
+            self.precision(p, t, full_seq=full_seq)
+            for p, t in zip(prediction, target)
+        ]
+        precision = sum(precision) / len(precision)
+        return precision
 
-        self.optimizer.zero_grad()
+    @torch.no_grad()
+    def valid(self):
+        char_precision = 0
+        seq_precision = 0
+        val_loss = 0
+        model = self.model.eval()
+        n = len(self.val_loader)
+        step_to_print = random.choice(range(n))
+        for step, batch in tqdm(enumerate(self.val_loader), "Validating", total=n):
+            batch = batch.to(self.device)
+            target = batch['target']
+            # target_mask = batch['target_mask']
+            output = model(**batch)
 
+            loss = self.criterion(
+                output.view(-1, output.shape[-1]),
+                target.flatten()
+            )
+            val_loss += loss.item()
+
+            prediction = output.argmax(dim=-1)
+
+            # String prediction
+            prediction = self.vocab.batch_decode(prediction.detach().tolist())
+            target = self.vocab.batch_decode(target.detach().tolist())
+            if step == step_to_print:
+                for p, t in zip(prediction, target):
+                    self.print(f"~~~~~\n= {t}\n< {p}")
+
+            # Calculate precision
+            # ic(prediction, target)
+            # ic(precision, count)
+            char_precision += self.batch_precision(
+                prediction,
+                target,
+                full_seq=False
+            )
+            seq_precision += self.batch_precision(
+                prediction,
+                target,
+                full_seq=True
+            )
+
+        char_precision = char_precision / n
+        seq_precision = seq_precision / n
+        val_loss = val_loss / n
+        return dict(
+            seq_precision=seq_precision,
+            char_precision=char_precision,
+            val_loss=val_loss
+        )
+
+    def train_step(self, batch):
+        model = self.model.train()
+        batch = batch.to(self.device)
+        # Forward
+        output = model(**batch)
+
+        # Calculate loss
+        target = batch['target']
+        loss = self.criterion(
+            output.view(-1, output.shape[-1]),
+            target.flatten()
+        )
+
+        # Backward and update
         loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
-
+        clip_grad_norm_(self.model.parameters(), 1)
         self.optimizer.step()
         self.scheduler.step()
 
-        loss_item = loss.item()
+        return loss.item()
+        # ic(output)
 
-        return loss_item
+    def print(self, *args):
+        return tqdm.write(" ".join(args))

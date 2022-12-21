@@ -65,15 +65,20 @@ class Vocab():
         self.i2c[3] = '*'
         self.i2c[4] = '<unk>'
 
-    def encode(self, chars):
+    def encode(self, chars, max_length=None):
         vocab = self.chars
         chars = unidecode_string(chars, vocab)
-        return [self.go] + [self.c2i.get(c, self.other) for c in chars] + [self.eos]
+        seq = [self.c2i.get(c, self.other) for c in chars]
+        if max_length is not None:
+            n = len(seq)
+            seq = seq[:max_length - 2]
+            seq = seq + [self.pad] * (max_length - 2 - n)
+        return [self.go] + seq + [self.eos]
 
     def decode(self, ids):
-        first = 1 if self.go in ids else 0
-        last = ids.index(self.eos) if self.eos in ids else None
-        sent = ''.join([self.i2c[i] for i in ids[first:last]])
+        # first = ids.index(self.go) if self.go in ids else 0
+        # last = ids.index(self.eos) if self.eos in ids else None
+        sent = ''.join([self.i2c[i] for i in ids if i > 4])
         return sent
 
     def __len__(self):

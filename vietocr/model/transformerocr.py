@@ -13,20 +13,20 @@ class VietOCR(nn.Module):
 
         super(VietOCR, self).__init__()
 
-        self.cnn = CNN(backbone, **cnn_args)
+        self.backbone = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
 
         if seq_modeling == 'transformer':
-            self.transformer = LanguageTransformer(
+            self.head = LanguageTransformer(
                 vocab_size, **transformer_args)
         elif seq_modeling == 'seq2seq':
-            self.transformer = Seq2Seq(vocab_size, **transformer_args)
+            self.head = Seq2Seq(vocab_size, **transformer_args)
         elif seq_modeling == 'convseq2seq':
-            self.transformer = ConvSeq2Seq(vocab_size, **transformer_args)
+            self.head = ConvSeq2Seq(vocab_size, **transformer_args)
         else:
             raise('Not Support Seq Model')
 
-    def forward(self, img, tgt_input, tgt_key_padding_mask):
+    def forward(self, image, target=None, target_mask=None):
         """
         Shape:
             - img: (N, C, H, W)
@@ -34,16 +34,19 @@ class VietOCR(nn.Module):
             - tgt_key_padding_mask: (N, T)
             - output: b t v
         """
-        src = self.cnn(img)
+        source = self.backbone(image)
 
         #
-        tgt_input = tgt_input.transpose(0, 1)
+        target = target.transpose(0, 1)
 
         if self.seq_modeling == 'transformer':
-            outputs = self.transformer(
-                src, tgt_input, tgt_key_padding_mask=tgt_key_padding_mask)
+            outputs = self.head(
+                source,
+                target,
+                tgt_key_padding_mask=1 - target_mask
+            )
         elif self.seq_modeling == 'seq2seq':
-            outputs = self.transformer(src, tgt_input)
+            outputs = self.head(source, target)
         elif self.seq_modeling == 'convseq2seq':
-            outputs = self.transformer(src, tgt_input)
+            outputs = self.head(source, target)
         return outputs

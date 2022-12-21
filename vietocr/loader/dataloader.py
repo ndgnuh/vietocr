@@ -21,6 +21,17 @@ from torchvision.transforms import functional as TF
 import sys
 
 
+class AttrDict(dict):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.__dict__ = self
+
+    def to(self, device):
+        for k, v in self.items():
+            self[k] = v.cuda()
+        return self
+
+
 class OCRDataset(Dataset):
     def __init__(self, lmdb_path, root_dir, annotation_path, vocab, image_height=32, image_min_width=32, image_max_width=512, transform=None):
         self.root_dir = root_dir
@@ -210,29 +221,31 @@ class OCRDataset(IndexedImageFolder):
         image = Image.open(image_path).convert("RGB")
         image = letterbox(image, self.image_height, self.image_max_width)
 
-        if self.transforms is not None:
-            image = self.transforms(image)
         if self.transform is not None:
             image = self.transform(image)
 
-        word = self.vocab.encode(word)
-        max_length = 128
-        target, target_mask, target_length = pad_sequence(
-            word,
-            max_length,
-            self.vocab.pad
-        )
+        target = self.vocab.encode(word, max_length=128)
+        target_mask = [
+            1 if i >= 4 else 0 for i in target
+        ]
+        # max_length = 128
+        # target, target_mask, target_length = pad_sequence(
+        #     word,
+        #     max_length - 1,
+        #     self.vocab.pad
+        # )
+        # target = [self.vocab.go] + word + [self.vocab.eos]
 
         # Keep the keys to interface with the previous code
         # image, target input, target output, target mask
         tgt_input = ensure_tensor(target)
         tgt_output = torch.roll(tgt_input, -1)
-        return dict(
-            img=ensure_tensor(image),
-            tgt_input=tgt_input,
-            tgt_output=tgt_output,
-            tgt_padding_mask=1 - ensure_tensor(target_mask),
-            target_length=ensure_tensor(target_length)
+        tgt_output[-1] = 0
+        return AttrDict(
+            image=ensure_tensor(image),
+            target=tgt_input,
+            target_mask=ensure_tensor(target_mask),
+            # target_length=ensure_tensor(target_length)
         )
 
 
