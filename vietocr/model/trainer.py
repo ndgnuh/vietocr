@@ -73,7 +73,7 @@ class Trainer:
             self.optimizer, total_steps=self.num_iters, **config['optimizer'])
 
         self.criterion = nn.CrossEntropyLoss(
-            ignore_index=self.vocab.pad,
+            ignore_index=self.vocab.pad_id,
             label_smoothing=0.1
         )
         # self.criterion = LabelSmoothingLoss(
