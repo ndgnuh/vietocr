@@ -83,7 +83,8 @@ class Trainer:
             transform=transform,
             image_height=self.config['dataset']['image_height'],
             image_min_width=self.config['dataset']['image_min_width'],
-            image_max_width=self.config['dataset']['image_max_width']
+            image_max_width=self.config['dataset']['image_max_width'],
+            sequence_max_length=self.config['dataset']['sequence_max_length']
         )
         loader = DataLoader(
             dataset,
@@ -156,13 +157,17 @@ class Trainer:
                 output.view(-1, output.shape[-1]),
                 target.flatten()
             )
-            val_loss += loss.item()
+            val_loss += loss.cpu().item()
 
-            prediction = output.argmax(dim=-1)
+            prediction = output.cpu().argmax(dim=-1)
 
             # String prediction
-            prediction = self.vocab.batch_decode(prediction.detach().tolist())
-            target = self.vocab.batch_decode(target.detach().tolist())
+            prediction = self.vocab.batch_decode(
+                prediction.cpu().detach().tolist()
+            )
+            target = self.vocab.batch_decode(
+                target.cpu().detach().tolist()
+            )
             if step == step_to_print:
                 for p, t in zip(prediction, target):
                     self.print(f"~~~~~\n= {t}\n< {p}")
@@ -194,6 +199,7 @@ class Trainer:
         model = self.model.train()
         batch = batch.to(self.device)
         # Forward
+        self.optimizer.zero_grad()
         output = model(**batch)
 
         # Calculate loss
@@ -209,7 +215,9 @@ class Trainer:
         self.optimizer.step()
         self.scheduler.step()
 
-        return loss.item()
+        batch.to('cpu')
+
+        return loss.cpu().item()
         # ic(output)
 
     def print(self, *args):
