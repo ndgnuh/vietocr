@@ -1,0 +1,67 @@
+# change to list chars of your dataset or use default vietnamese chars
+# vocab: '0123456789'
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+
+# cpu, cuda, cuda:0
+device: cuda:0
+
+weight_path: "weights"
+checkpoint_path: "checkpoint"
+
+optimizer:
+    max_lr: 0.0003 
+    pct_start: 0.1
+
+trainer:
+    batch_size: 17
+    print_every: 500
+    valid_every: 150
+    iters: 100000
+    # where to save our model for prediction
+    export: ./weights/transformerocr.pth
+    checkpoint: ./checkpoint/transformerocr_checkpoint.pth
+    log: ./train.log
+    # null to disable compuate accuracy, or change to number of sample to enable validiation while training
+    metrics: null
+
+dataset:    
+    # name of your dataset
+    train_annotation: data/vietocr-sample-dataset/annotation_train.clean-big.txt
+    valid_annotation: data/vietocr-sample-dataset/annotation_test.clean-small.txt
+    # train_annotation: data/random-textbox-vi-1k/train.txt
+    # valid_annotation: data/random-textbox-vi-1k/val.txt
+    # train_annotation: data/lmnist/train.txt
+    # valid_annotation: data/lmnist/val.txt
+
+    # resize image to 32 height, larger height will increase accuracy
+    sequence_max_length: 32
+    image_height: 32
+    image_min_width: 32
+    image_max_width: 64
+
+dataloader:
+    num_workers: 3
+    pin_memory: True
+
+aug:
+    image_aug: true
+    masked_language_model: true
+
+predictor:
+    # disable or enable beamsearch while prediction, use beamsearch will be slower
+    beamsearch: False
+
+quiet: False 
+
+backbone: svtr_t
+cnn:
+  image_size: [32, 64]
+  output_size: 256
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
