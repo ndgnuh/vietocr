@@ -27,7 +27,7 @@ class AttrDict(dict):
         self.__dict__ = self
 
     def to(self, device):
-        return AttrDict({k: v.to(device, non_blocking=True) for k, v in self.items()})
+        return AttrDict({k: v.to(device) for k, v in self.items()})
 
 
 class OCRDataset(Dataset):
