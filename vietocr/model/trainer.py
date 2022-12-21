@@ -14,6 +14,22 @@ from torch.utils.data import DataLoader
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
+from dataclasses import dataclass
+from os import path
+
+
+@dataclass
+class AutoExport:
+    export_path: str
+    threshold: float = 0.8
+    current_best: float = -1
+
+    def run(self, state_dict, metric):
+        if metric < self.threshold:
+            return
+        if metric > self.current_best:
+            self.current_best = metric
+            torch.save(state_dict, self.export_path)
 
 
 class Trainer:
@@ -75,6 +91,13 @@ class Trainer:
             self.val_loader = self.setup_dataloader(self.val_annotation)
 
         self.train_losses = []
+        self.export = AutoExport(
+            export_path=path.join(
+                "weights",
+                self.config['experiment_name'] + ".pth"
+            ),
+            threshold=0
+        )
 
     def setup_dataloader(self, index_file_path, transform=None):
         dataset = OCRDataset(
@@ -113,6 +136,10 @@ class Trainer:
 
             if step > 0 and step % self.valid_every == 0:
                 metrics = self.valid()
+                self.export.run(
+                    self.model.state_dict(),
+                    metrics['seq_precision']
+                )
                 self.print(
                     f"Train loss: {total_loss / step:.2f}, Val loss: {metrics['val_loss']:.2f}, Char prec: {metrics['char_precision']:.2f}, Seq prec: {metrics['seq_precision']:.2f}"
                 )

@@ -24,7 +24,6 @@ def train(config, args):
     # Keep the script fast for other purpose
     from vietocr.model.trainer import Trainer
 
-
     trainer = Trainer(config)
 
     # Weight
@@ -113,6 +112,9 @@ def main():
     configs = [read_yaml(config_file) for config_file in args.configs]
     config = merge_dict(*configs)
 
+    config['experiment_name'] = path.splitext(
+        path.basename(args.configs[-1])
+    )[0]
     if action == "train":
         train(config, args)
     elif action == "export":
