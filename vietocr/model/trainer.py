@@ -4,6 +4,8 @@ from vietocr.tool.utils import download_weights
 from vietocr.tool.logger import Logger
 from vietocr.loader.aug import ImgAugTransform
 from vietocr.loader.dataloader import OCRDataset
+from vietocr.model.vocab import VocabS2S
+from vietocr.model.transformerocr import VietOCR
 
 import torch
 import random
@@ -14,8 +16,30 @@ from torch.utils.data import DataLoader
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
-from dataclasses import dataclass
+from typing import Dict
+from dataclasses import dataclass, field
 from os import path
+
+
+@dataclass
+class AutoExport:
+    weight_path: str
+    checkpoint_path: str
+    name: str
+    threshold: float = 0.6
+    current_bests: Dict = field(default_factory=dict)
+
+    def run(self, weight, checkpoint, **metrics):
+        for metric, value in metrics.items():
+            current_best = self.current_bests.get(metric, -1)
+            if value > current_best and value > self.threshold:
+                self.current_best = value
+                self.save(weight, checkpoint)
+
+    # def self1
+
+    def get_path(self, root, name, metric):
+        return path.join(root, name + "_best_" + metric + ".pth")
 
 
 @dataclass
@@ -34,8 +58,17 @@ class AutoExport:
 
 class Trainer:
     def __init__(self, config):
+        self.vocab = VocabS2S(config['vocab'])
+        self.model = VietOCR(
+            backbone=config['model_backbone'],
+            head_size=config['model_head_size'],
+            image_size=config['image_size'],
+            vocab_size=len(self.vocab),
+            sos_token_id=self.vocab.sos_id,
+            max_sequence_length=config['dataset']['sequence_max_length']
+        )
+        self.model.to(config['device'])
         self.config = config
-        self.model, self.vocab = build_model(config)
         self.device = config['device']
         self.num_iters = config['trainer']['iters']
         self.beamsearch = config['predictor']['beamsearch']
@@ -104,10 +137,9 @@ class Trainer:
             index=index_file_path,
             vocab=self.vocab,
             transform=transform,
-            image_height=self.config['dataset']['image_height'],
-            image_min_width=self.config['dataset']['image_min_width'],
-            image_max_width=self.config['dataset']['image_max_width'],
-            sequence_max_length=self.config['dataset']['sequence_max_length']
+            image_height=self.config['image_height'],
+            image_width=self.config['image_width'],
+            max_sequence_length=self.config['max_sequence_length']
         )
         loader = DataLoader(
             dataset,
@@ -128,7 +160,8 @@ class Trainer:
         train_loader = cycle(self.train_loader)
         for step in tqdm(range(self.num_iters), "Training"):
             batch = next(train_loader)
-            total_loss = total_loss + self.train_step(batch)
+            loss = self.train_step(batch)
+            total_loss = total_loss + loss
             # loss.backward()
             # clip_grad_norm_(self.model.parameters(), 1)
             # self.optimizer.step()
@@ -166,6 +199,15 @@ class Trainer:
         precision = sum(precision) / len(precision)
         return precision
 
+    def compute_loss(self, output, target):
+        # output: (batch, sequence, vocab_size)
+        # target: (batch, sequence)
+        # ic(output.shape, target.shape)
+        return self.criterion(
+            output[:, 1:].reshape(-1, output.shape[-1]),
+            target[:, 1:].flatten()
+        )
+
     @torch.no_grad()
     def valid(self):
         char_precision = 0
@@ -180,10 +222,8 @@ class Trainer:
             # target_mask = batch['target_mask']
             output = model(**batch)
 
-            loss = self.criterion(
-                output.view(-1, output.shape[-1]),
-                target.flatten()
-            )
+            loss = self.compute_loss(output, target)
+
             val_loss += loss.cpu().item()
 
             prediction = output.cpu().argmax(dim=-1)
@@ -231,18 +271,13 @@ class Trainer:
 
         # Calculate loss
         target = batch['target']
-        loss = self.criterion(
-            output.view(-1, output.shape[-1]),
-            target.flatten()
-        )
+        loss = self.compute_loss(output, target)
 
         # Backward and update
         loss.backward()
         clip_grad_norm_(self.model.parameters(), 1)
         self.optimizer.step()
         self.scheduler.step()
-
-        batch.to('cpu')
 
         return loss.cpu().item()
         # ic(output)

@@ -30,104 +30,6 @@ class AttrDict(dict):
         return AttrDict({k: v.to(device) for k, v in self.items()})
 
 
-class OCRDataset(Dataset):
-    def __init__(self, lmdb_path, root_dir, annotation_path, vocab, image_height=32, image_min_width=32, image_max_width=512, transform=None):
-        self.root_dir = root_dir
-        self.annotation_path = os.path.join(root_dir, annotation_path)
-        self.vocab = vocab
-        self.transform = transform
-
-        self.image_height = image_height
-        self.image_min_width = image_min_width
-        self.image_max_width = image_max_width
-
-        self.lmdb_path = lmdb_path
-
-        if os.path.isdir(self.lmdb_path):
-            print('{} exists. Remove folder if you want to create new dataset'.format(
-                self.lmdb_path))
-            sys.stdout.flush()
-        else:
-            createDataset(self.lmdb_path, root_dir, annotation_path)
-
-        self.env = lmdb.open(
-            self.lmdb_path,
-            max_readers=8,
-            readonly=True,
-            lock=False,
-            readahead=False,
-            meminit=False)
-        self.txn = self.env.begin(write=False)
-
-        nSamples = int(self.txn.get('num-samples'.encode()))
-        self.nSamples = nSamples
-
-        self.build_cluster_indices()
-
-    def build_cluster_indices(self):
-        self.cluster_indices = defaultdict(list)
-
-        pbar = tqdm(range(self.__len__()),
-                    desc='{} build cluster'.format(self.lmdb_path),
-                    ncols=100, position=0, leave=True)
-
-        for i in pbar:
-            bucket = self.get_bucket(i)
-            self.cluster_indices[bucket].append(i)
-
-    def get_bucket(self, idx):
-        key = 'dim-%09d' % idx
-
-        dim_img = self.txn.get(key.encode())
-        dim_img = np.fromstring(dim_img, dtype=np.int32)
-        imgH, imgW = dim_img
-
-        new_w, image_height = resize(
-            imgW, imgH, self.image_height, self.image_min_width, self.image_max_width)
-
-        return new_w
-
-    def read_buffer(self, idx):
-        img_file = 'image-%09d' % idx
-        label_file = 'label-%09d' % idx
-        path_file = 'path-%09d' % idx
-
-        imgbuf = self.txn.get(img_file.encode())
-
-        label = self.txn.get(label_file.encode()).decode()
-        img_path = self.txn.get(path_file.encode()).decode()
-
-        buf = six.BytesIO()
-        buf.write(imgbuf)
-        buf.seek(0)
-
-        return buf, label, img_path
-
-    def read_data(self, idx):
-        buf, label, img_path = self.read_buffer(idx)
-
-        img = Image.open(buf).convert('RGB')
-
-        if self.transform:
-            img = self.transform(img)
-
-        img_bw = process_image(img, self.image_height,
-                               self.image_min_width, self.image_max_width)
-
-        word = self.vocab.encode(label)
-
-        return img_bw, word, img_path
-
-    def __getitem__(self, idx):
-        img, word, img_path = self.read_data(idx)
-
-        img_path = os.path.join(self.root_dir, img_path)
-
-        sample = {'img': img, 'word': word, 'img_path': img_path}
-
-        return sample
-
-
 class ClusterRandomSampler(Sampler):
 
     def __init__(self, data_source, batch_size, shuffle=True):
@@ -199,18 +101,16 @@ class OCRDataset(IndexedImageFolder):
         vocab: Any,
         transform: Callable,
         image_height: int,
-        image_min_width: int,
-        image_max_width: int,
-        sequence_max_length: int
+        image_width: int,
+        max_sequence_length: int
     ):
         super().__init__(index=index)
         self.index = index
         self.vocab = vocab
         self.transform = transform
         self.image_height = image_height
-        self.image_min_width = image_min_width
-        self.image_max_width = image_max_width
-        self.sequence_max_length = sequence_max_length
+        self.image_width = image_width
+        self.max_sequence_length = max_sequence_length
 
     def split_annotation(self, line):
         splits = re.split(r"\s+", line.strip())
@@ -219,12 +119,12 @@ class OCRDataset(IndexedImageFolder):
     def __getitem__(self, index: int):
         image_path, word = self.split_annotation(self.samples[index])
         image = Image.open(image_path).convert("RGB")
-        image = letterbox(image, self.image_height, self.image_max_width)
+        image = letterbox(image, self.image_height, self.image_width)
 
         if self.transform is not None:
             image = self.transform(image)
 
-        target = self.vocab.encode(word, max_length=self.sequence_max_length)
+        target = self.vocab.encode(word, max_length=self.max_sequence_length)
         target_mask = [
             1 if i >= 4 else 0 for i in target
         ]
@@ -240,11 +140,12 @@ class OCRDataset(IndexedImageFolder):
         # image, target input, target output, target mask
         tgt_input = ensure_tensor(target)
         tgt_output = torch.roll(tgt_input, -1)
-        tgt_output[-1] = 0
+        tgt_output[-1] = 1
         return AttrDict(
             image=ensure_tensor(image),
             target=tgt_input,
             target_mask=ensure_tensor(target_mask),
+            target_output=tgt_output,
             # target_length=ensure_tensor(target_length)
         )
 

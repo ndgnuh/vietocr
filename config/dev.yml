@@ -1,6 +1,8 @@
 # change to list chars of your dataset or use default vietnamese chars
-# vocab: '0123456789'
-vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+vocab: '0123456789'
+# OR
+vocab_file: null
+# vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 
 # cpu, cuda, cuda:0
 device: cuda:0
@@ -13,9 +15,9 @@ optimizer:
     pct_start: 0.1
 
 trainer:
-    batch_size: 17
+    batch_size: 42
     print_every: 500
-    valid_every: 150
+    valid_every: 50
     iters: 100000
     # where to save our model for prediction
     export: ./weights/transformerocr.pth
@@ -28,20 +30,19 @@ dataset:
     # name of your dataset
     train_annotation: data/vietocr-sample-dataset/annotation_train.clean-big.txt
     valid_annotation: data/vietocr-sample-dataset/annotation_test.clean-small.txt
-    # train_annotation: data/random-textbox-vi-1k/train.txt
-    # valid_annotation: data/random-textbox-vi-1k/val.txt
-    # train_annotation: data/lmnist/train.txt
-    # valid_annotation: data/lmnist/val.txt
+    train_annotation: data/random-textbox-vi-1k/train.txt
+    valid_annotation: data/random-textbox-vi-1k/val.txt
+    train_annotation: data/lmnist-ez/train.txt
+    valid_annotation: data/lmnist-ez/test.txt
+    # train_annotation: data/random-fullname/train.txt
+    # valid_annotation: data/random-fullname/val.txt
 
     # resize image to 32 height, larger height will increase accuracy
-    sequence_max_length: 32
-    image_height: 32
-    image_min_width: 32
-    image_max_width: 64
+    sequence_max_length: 10
 
 dataloader:
-    num_workers: 3
-    pin_memory: True
+    num_workers: 6
+    # pin_memory: True
 
 aug:
     image_aug: true
@@ -53,10 +54,12 @@ predictor:
 
 quiet: False 
 
-backbone: svtr_t
-cnn:
-  image_size: [32, 64]
-  output_size: 256
+max_sequence_length: 10
+image_width: 128
+image_height: 32
+model_backbone: svtr_t
+model_head_size: 128
+image_size: [32, 128]
 
 seq_modeling: seq2seq
 transformer:
