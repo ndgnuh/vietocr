@@ -58,29 +58,19 @@ class AutoExport:
 
 class Trainer:
     def __init__(self, config):
+        # Add all the config key to this object
+        self.__dict__.update(config)
+
         self.vocab = VocabS2S(config['vocab'])
         self.model = VietOCR(
             backbone=config['model_backbone'],
             head_size=config['model_head_size'],
-            image_size=config['image_size'],
+            image_size=(config['image_height'], config['image_width']),
             vocab_size=len(self.vocab),
             sos_token_id=self.vocab.sos_id,
-            max_sequence_length=config['dataset']['sequence_max_length']
+            max_sequence_length=config['max_sequence_length']
         )
         self.model.to(config['device'])
-        self.config = config
-        self.device = config['device']
-        self.num_iters = config['trainer']['iters']
-        self.beamsearch = config['predictor']['beamsearch']
-
-        self.data_root = config['dataset']['data_root']
-        self.train_annotation = config['dataset']['train_annotation']
-        self.val_annotation = config['dataset']['valid_annotation']
-        self.dataset_name = config['dataset']['name']
-
-        self.batch_size = config['trainer']['batch_size']
-        self.print_every = config['trainer']['print_every']
-        self.valid_every = config['trainer']['valid_every']
 
         self.image_aug = config['aug']['image_aug']
         self.masked_language_model = config['aug']['masked_language_model']
@@ -103,7 +93,10 @@ class Trainer:
         self.optimizer = AdamW(self.model.parameters(),
                                betas=(0.9, 0.98), eps=1e-09)
         self.scheduler = OneCycleLR(
-            self.optimizer, total_steps=self.num_iters, **config['optimizer'])
+            self.optimizer,
+            total_steps=self.training_num_iters,
+            max_lr=self.training_lr
+        )
 
         self.criterion = nn.CrossEntropyLoss(
             ignore_index=self.vocab.pad_id,
@@ -117,17 +110,19 @@ class Trainer:
             transform = ImgAugTransform()
 
         self.train_loader = self.setup_dataloader(
-            self.train_annotation,
+            self.data_train_annotation,
             transform
         )
-        if self.val_annotation:
-            self.val_loader = self.setup_dataloader(self.val_annotation)
+        if hasattr(self, "data_val_annotation"):
+            self.val_loader = self.setup_dataloader(
+                self.data_val_annotation
+            )
 
         self.train_losses = []
         self.export = AutoExport(
             export_path=path.join(
                 "weights",
-                self.config['experiment_name'] + ".pth"
+                self.experiment_name + ".pth"
             ),
             threshold=0
         )
@@ -137,14 +132,13 @@ class Trainer:
             index=index_file_path,
             vocab=self.vocab,
             transform=transform,
-            image_height=self.config['image_height'],
-            image_width=self.config['image_width'],
-            max_sequence_length=self.config['max_sequence_length']
+            image_height=self.image_height,
+            image_width=self.image_width,
+            max_sequence_length=self.max_sequence_length
         )
         loader = DataLoader(
             dataset,
-            batch_size=self.batch_size,
-            ** self.config['dataloader']
+            batch_size=self.data_batch_size,
         )
         # sampler=sampler,
         # collate_fn=collate_fn,
@@ -158,7 +152,7 @@ class Trainer:
         total_loss = 0
 
         train_loader = cycle(self.train_loader)
-        for step in tqdm(range(self.num_iters), "Training"):
+        for step in tqdm(range(self.training_num_iters), "Training"):
             batch = next(train_loader)
             loss = self.train_step(batch)
             total_loss = total_loss + loss
@@ -167,7 +161,7 @@ class Trainer:
             # self.optimizer.step()
             # self.scheduler.step()
 
-            if step > 0 and step % self.valid_every == 0:
+            if step > 0 and step % self.training_validate_every == 0:
                 metrics = self.valid()
                 self.export.run(
                     self.model.state_dict(),

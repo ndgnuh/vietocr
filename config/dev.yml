@@ -26,19 +26,25 @@ trainer:
     # null to disable compuate accuracy, or change to number of sample to enable validiation while training
     metrics: null
 
-dataset:    
-    # name of your dataset
-    train_annotation: data/vietocr-sample-dataset/annotation_train.clean-big.txt
-    valid_annotation: data/vietocr-sample-dataset/annotation_test.clean-small.txt
-    train_annotation: data/random-textbox-vi-1k/train.txt
-    valid_annotation: data/random-textbox-vi-1k/val.txt
-    train_annotation: data/lmnist-ez/train.txt
-    valid_annotation: data/lmnist-ez/test.txt
-    # train_annotation: data/random-fullname/train.txt
-    # valid_annotation: data/random-fullname/val.txt
+training_validate_every: 50
+training_num_iters: 100000
+training_lr: 0.0003
 
-    # resize image to 32 height, larger height will increase accuracy
-    sequence_max_length: 10
+data_batch_size: 50
+data_train_annotation: data/lmnist-ez/train.txt
+data_val_annotation: data/lmnist-ez/test.txt
+
+# dataset:    
+#     # name of your dataset
+#     train_annotation: data/vietocr-sample-dataset/annotation_train.clean-big.txt
+#     valid_annotation: data/vietocr-sample-dataset/annotation_test.clean-small.txt
+#     train_annotation: data/random-textbox-vi-1k/train.txt
+#     valid_annotation: data/random-textbox-vi-1k/val.txt
+#     # train_annotation: data/random-fullname/train.txt
+#     # valid_annotation: data/random-fullname/val.txt
+
+#     # resize image to 32 height, larger height will increase accuracy
+#     sequence_max_length: 10
 
 dataloader:
     num_workers: 6
@@ -52,19 +58,10 @@ predictor:
     # disable or enable beamsearch while prediction, use beamsearch will be slower
     beamsearch: False
 
-quiet: False 
-
+# Data
 max_sequence_length: 10
 image_width: 128
 image_height: 32
-model_backbone: svtr_t
-model_head_size: 128
-image_size: [32, 128]
 
-seq_modeling: seq2seq
-transformer:
-    encoder_hidden: 256
-    decoder_hidden: 256
-    img_channel: 256
-    decoder_embedded: 256
-    dropout: 0.1
+model_backbone: svtr_t
+model_head_size: 256

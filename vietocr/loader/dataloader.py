@@ -125,9 +125,9 @@ class OCRDataset(IndexedImageFolder):
             image = self.transform(image)
 
         target = self.vocab.encode(word, max_length=self.max_sequence_length)
-        target_mask = [
-            1 if i >= 4 else 0 for i in target
-        ]
+        # target_mask = [
+        #     1 if i >= 4 else 0 for i in target
+        # ]
         # max_length = 128
         # target, target_mask, target_length = pad_sequence(
         #     word,
@@ -138,14 +138,14 @@ class OCRDataset(IndexedImageFolder):
 
         # Keep the keys to interface with the previous code
         # image, target input, target output, target mask
-        tgt_input = ensure_tensor(target)
-        tgt_output = torch.roll(tgt_input, -1)
-        tgt_output[-1] = 1
+        target = ensure_tensor(target)
+        # tgt_output = torch.roll(tgt_input, -1)
+        # tgt_output[-1] = 1
         return AttrDict(
             image=ensure_tensor(image),
-            target=tgt_input,
-            target_mask=ensure_tensor(target_mask),
-            target_output=tgt_output,
+            target=target,
+            # target_mask=ensure_tensor(target_mask),
+            # target_output=tgt_output,
             # target_length=ensure_tensor(target_length)
         )
 
