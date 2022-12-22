@@ -61,35 +61,26 @@ class Trainer:
         # Add all the config key to this object
         self.__dict__.update(config)
 
-        self.vocab = VocabS2S(config['vocab'])
+        if 'vocab' in config:
+            self.vocab = VocabS2S(config['vocab'])
+        elif 'vocab_file':
+            self.vocab = VocabS2S.from_file(config['vocab_file'])
+        else:
+            raise ValueError(
+                "Either vocab or vocab file must be in the config")
         self.model = VietOCR(
-            backbone=config['model_backbone'],
-            head_size=config['model_head_size'],
-            image_size=(config['image_height'], config['image_width']),
+            backbone=self.model_backbone,
+            head_size=self.model_head_size,
+            image_size=(self.image_height, self.image_width),
             vocab_size=len(self.vocab),
             sos_token_id=self.vocab.sos_id,
-            max_sequence_length=config['max_sequence_length']
+            max_sequence_length=self.max_sequence_length
         )
         self.model.to(config['device'])
 
-        self.image_aug = config['aug']['image_aug']
-        self.masked_language_model = config['aug']['masked_language_model']
-
-        self.checkpoint = config['trainer']['checkpoint']
-        self.export_weights = config['trainer']['export']
-        self.metrics = config['trainer']['metrics']
-        logger = config['trainer']['log']
-
-        if logger:
-            self.logger = Logger(logger)
-
-        if config.get('pretrained', None) is not None:
-            weight_file = download_weights(
-                **config['pretrain'], quiet=config['quiet'])
-            self.load_weights(weight_file)
-
         self.iter = 0
 
+        # Optimization stuffs
         self.optimizer = AdamW(self.model.parameters(),
                                betas=(0.9, 0.98), eps=1e-09)
         self.scheduler = OneCycleLR(
@@ -97,17 +88,16 @@ class Trainer:
             total_steps=self.training_num_iters,
             max_lr=self.training_lr
         )
-
         self.criterion = nn.CrossEntropyLoss(
             ignore_index=self.vocab.pad_id,
             label_smoothing=0.1
         )
-        # self.criterion = LabelSmoothingLoss(
-        #     len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
 
-        transform = None
-        if self.image_aug:
+        # DATA STUFFS
+        if getattr(self, "data_augmentation", False):
             transform = ImgAugTransform()
+        else:
+            transform = None
 
         self.train_loader = self.setup_dataloader(
             self.data_train_annotation,
@@ -118,7 +108,7 @@ class Trainer:
                 self.data_val_annotation
             )
 
-        self.train_losses = []
+        # AUTO SAVE
         self.export = AutoExport(
             export_path=path.join(
                 "weights",
@@ -140,11 +130,6 @@ class Trainer:
             dataset,
             batch_size=self.data_batch_size,
         )
-        # sampler=sampler,
-        # collate_fn=collate_fn,
-        # shuffle=False,
-        # drop_last=False,
-        # **self.config['dataloader'])
         return loader
 
     def train(self):
