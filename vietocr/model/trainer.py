@@ -147,9 +147,14 @@ class Trainer():
         self.model.eval()
 
         total_loss = []
-
+        total = len(self.valid_gen)
         with torch.no_grad():
-            for step, batch in tqdm(enumerate(self.valid_gen), "validation"):
+            pbar = tqdm(
+                enumerate(self.valid_gen),
+                "Validating",
+                total=total
+            )
+            for step, batch in pbar:
                 batch = self.batch_to_device(batch)
                 img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
                     'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
@@ -243,7 +248,7 @@ class Trainer():
             plt.figure()
             plt.imshow(img)
             plt.title('prob: {:.3f} - pred: {} - actual: {}'.format(prob,
-                      pred_sent, actual_sent), loc='left', fontdict=fontdict)
+                                                                    pred_sent, actual_sent), loc='left', fontdict=fontdict)
             plt.axis('off')
 
         plt.show()
