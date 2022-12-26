@@ -3,6 +3,7 @@ from torch import nn
 
 import vietocr.model.backbone.vgg as vgg
 from vietocr.model.backbone import resnet, shufflenet
+from vietocr.model.backbone.efficientnet import PatchedEfficientNet
 from vietocr.model.backbone.svtr import (
     svtr_b,
     svtr_l,
@@ -23,6 +24,7 @@ backbone_by_names = {
     "svtr_l": svtr_l,
     "svtr_s": svtr_s,
     "svtr_t": svtr_t,
+    "efficientnet": PatchedEfficientNet
 }
 backbone_by_names.update(resnet.models)
 backbone_by_names.update(shufflenet.models)
