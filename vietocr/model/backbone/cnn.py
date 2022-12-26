@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 import vietocr.model.backbone.vgg as vgg
-from vietocr.model.backbone.resnet import Resnet50
+from vietocr.model.backbone import resnet
 from vietocr.model.backbone.svtr import (
     svtr_b,
     svtr_l,
@@ -17,14 +17,14 @@ from vietocr.model.backbone.mobilenet import (
 backbone_by_names = {
     'vgg11_bn': vgg.vgg11_bn,
     'vgg19_bn': vgg.vgg19_bn,
-    'resnet50': Resnet50,
     'mobilenet_v3_large': mobilenet_v3_large,
     'mobilenet_v3_small': mobilenet_v3_small,
     "svtr_b": svtr_b,
     "svtr_l": svtr_l,
     "svtr_s": svtr_s,
-    "svtr_t": svtr_t
+    "svtr_t": svtr_t,
 }
+backbone_by_names.update(resnet.models)
 
 
 class CNN(nn.Module):
