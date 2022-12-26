@@ -1,0 +1,20 @@
+backbone: shufflenet
+cnn:
+  output_size: 256
+  dropout: 0.1
+  # arch: shufflenet_v2_x0_5
+  arch: shufflenet_v2_x1_0
+  # arch: shufflenet_v2_x1_5
+  # arch: shufflenet_v2_x2_0
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
+
+optimizer:
+    max_lr: 0.001
+    pct_start: 0.1
