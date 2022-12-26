@@ -12,3 +12,4 @@ matplotlib
 prefetch_generator
 einops
 unidecode
+icecream
