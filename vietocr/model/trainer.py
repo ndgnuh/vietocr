@@ -21,6 +21,7 @@ import torchvision
 from vietocr.tool.utils import compute_accuracy
 from PIL import Image
 from tqdm import tqdm
+from os import path
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -81,11 +82,24 @@ class Trainer():
         if self.image_aug:
             transforms = augmentor
 
-        self.train_gen = self.data_gen('train_{}'.format(self.dataset_name),
-                                       self.data_root, self.train_annotation, self.masked_language_model, transform=transforms)
+        self.lmdb_cache_path = config.get("lmdb_cache_path", "data-cache")
+        os.makedirs(self.lmdb_cache_path, exist_ok=True)
+
+        self.train_gen = self.data_gen(
+            path.join(self.lmdb_cache_path, f'train_{self.dataset_name}'),
+            self.data_root,
+            self.train_annotation,
+            self.masked_language_model,
+            transform=transforms
+        )
+
         if self.valid_annotation:
-            self.valid_gen = self.data_gen('valid_{}'.format(self.dataset_name),
-                                           self.data_root, self.valid_annotation, masked_language_model=False)
+            self.valid_gen = self.data_gen(
+                path.join(self.lmdb_cache_path, f'valid_{self.dataset_name}'),
+                self.data_root,
+                self.valid_annotation,
+                masked_language_model=False
+            )
 
         self.train_losses = []
 

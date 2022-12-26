@@ -20,6 +20,7 @@ trainer:
     # null to disable compuate accuracy, or change to number of sample to enable validiation while training
     metrics: null
 
+lmdb_cache_path: data-cache
 dataset:    
     # name of your dataset
     name: data
