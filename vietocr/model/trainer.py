@@ -195,8 +195,8 @@ class Trainer():
         actual_sents = []
         img_files = []
         prob = None
-
-        for batch in self.valid_gen:
+        pbar = tqdm(self.valid_gen, "Calculating accuracy")
+        for batch in pbar:
             batch = self.batch_to_device(batch)
 
             if self.beamsearch:
