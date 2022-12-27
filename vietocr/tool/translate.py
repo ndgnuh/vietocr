@@ -77,15 +77,15 @@ def translate(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     batch_size = len(img)
 
     feat = model.cnn(img)
-    memory = model.transformer.forward_encoder(src)
+    encoder_outputs, hidden = model.transformer.encoder(feat)
     outputs = []
-    inputs = torch.tensor([sos_token] * batch_size, device=device)
+    input = torch.tensor([sos_token] * batch_size, device=device)
     for i in range(max_seq_length):
-        output, memory = mdoel.transformer.forward_decoder(inputs, memory)
-        inputs = argmax(output, dim=-1)
+        output, hidden, _ = model.transformer.decoder(input, hidden, encoder_outputs)
+        input = torch.argmax(output, dim=-1)
         outputs.append(output)
 
-    outputs = torch.stacK(outputs)
+    outputs = torch.stack(outputs)
     probs, translated = outputs.topk(k=1)
 
     translated = translated.squeeze(-1)
