@@ -34,6 +34,32 @@ tqdm = partial(std_tqdm, dynamic_ncols=True)
 print = std_tqdm.write
 
 
+class CTCLoss(nn.Module):
+    def __init__(self, *a, **k):
+        super().__init__()
+        self.ctc = nn.CTCLoss(*a, **k)
+        self.log_softmax = nn.LogSoftmax(dim=-1)
+
+    def forward(self, outputs, targets):
+        # outputs: [time, batch, class]
+        # targets: [batch, max_length]
+        logits = self.log_softmax(outputs)
+
+        # target_lengths: [batch]
+        target_lengths = torch.count_nonzero(targets != self.ctc.blank, dim=1)
+
+        # input_lengths: [batch]
+        # use time * batch for now
+        input_lengths = torch.tensor(
+            [logits.shape[0]] * logits.shape[1],
+            device=logits.device
+        )
+
+        # ctc loss
+        loss = self.ctc(logits, targets, input_lengths, target_lengths)
+        return loss
+
+
 class Trainer():
     def __init__(self, config, augmentor=ImgAugTransform()):
 
