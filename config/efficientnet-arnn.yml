@@ -1,0 +1,25 @@
+backbone: efficientnet
+cnn:
+  output_size: 256
+  dropout: 0.1
+  # arch: efficientnet_b0
+  # arch: efficientnet_b1
+  # arch: efficientnet_b2
+  # arch: efficientnet_b3
+  # arch: efficientnet_b4
+  # arch: efficientnet_b5
+  # arch: efficientnet_b6
+  # arch: efficientnet_b7
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
+
+optimizer:
+    max_lr: 0.001
+    pct_start: 0.1
+
