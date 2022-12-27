@@ -89,6 +89,7 @@ def translate(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     probs, translated = outputs.topk(k=1)
 
     translated = translated.squeeze(-1)
+    probs = torch.softmax(probs, dim=-1)
     probs = (probs.sum(dim=0) / (probs > 0).count_nonzero(dim=0)).squeeze(-1)
 
     return translated, probs
