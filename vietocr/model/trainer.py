@@ -153,8 +153,7 @@ class Trainer():
                 val_loss = "N/A"
                 acc_full_seq, acc_per_char = self.precision(self.metrics)
 
-                info = 'iter: {:06d} - valid loss: {:.3f} - acc full seq: {:.4f} - acc per char: {:.4f}'.format(
-                    self.iter, val_loss, acc_full_seq, acc_per_char)
+                info = f'iter: {self.iter:06d} - valid loss: {val_loss} - acc full seq: {acc_full_seq:.4f} - acc per char: {acc_per_char:.4f}'
                 print(info)
                 self.logger.log(info)
 
