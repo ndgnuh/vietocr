@@ -80,7 +80,7 @@ def beamsearch(memory, model, device, beam_size=4, candidates=1, max_seq_length=
 
 
 @torch.no_grad()
-def translate(img, model, max_seq_length=32, sos_token=1, eos_token=2):
+def translate(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     model.eval()
     device = img.device
     batch_size = len(img)
