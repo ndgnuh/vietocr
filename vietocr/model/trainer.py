@@ -191,7 +191,13 @@ class Trainer():
             tgt_output = batch['tgt_output'].to(self.device)
 
             # Predict, no teacher forcing
-            translated, _, outputs = translate(img, self.model)
+            outputs = self.model(img)
+            probs, translated = outputs.topk(k=1, dim=-1)
+            # TODO: add confidence to prediction
+            # perferably to the predictor, so the the outputs
+            # are united, and there's no mismatch between codes
+            # probs = probs.squeeze(-1)
+            translated = translated.squeeze(-1)
 
             # Validation loss
             outputs = outputs.flatten(0, 1)
