@@ -70,7 +70,30 @@ def beamsearch(memory, model, device, beam_size=4, candidates=1, max_seq_length=
     
     return [1] + [int(i) for i in hypothesises[0][:-1]]
 
+@torch.no_grad()
 def translate(img, model, max_seq_length=128, sos_token=1, eos_token=2):
+    model.eval()
+    device = img.device()
+    batch_size = len(img)
+
+    feat = model.cnn(img)
+    memory = model.transformer.forward_encoder(src)
+    outputs = []
+    inputs = torch.tensor([sos_token] * batch_size, device=device)
+    for i in range(max_seq_length):
+        output, memory = mdoel.transformer.forward_decoder(inputs, memory)
+        inputs = argmax(output, dim=-1)
+        outputs.append(output)
+
+    outputs = torch.stacK(outputs)
+    probs, translated = outputs.topk(k=1)
+
+    translated = translated.squeeze(-1)
+    probs = (probs.sum(dim=0) / (probs > 0).count_nonzero(dim=0)).squeeze(-1)
+
+    return translated, probs
+
+def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     "data: BxCXHxW"
     model.eval()
     device = img.device
