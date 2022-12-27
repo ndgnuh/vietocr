@@ -149,7 +149,8 @@ class Trainer():
                 self.logger.log(info)
 
             if self.valid_annotation and self.iter % self.valid_every == 0:
-                val_loss = self.validate()
+                # val_loss = self.validate()
+                val_loss = "N/A"
                 acc_full_seq, acc_per_char = self.precision(self.metrics)
 
                 info = 'iter: {:06d} - valid loss: {:.3f} - acc full seq: {:.4f} - acc per char: {:.4f}'.format(
