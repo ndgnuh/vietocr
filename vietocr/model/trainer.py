@@ -10,6 +10,7 @@ from vietocr.loader.aug import ImgAugTransform
 
 import yaml
 import torch
+from vietocr.tool.stats import AverageStatistic
 from vietocr.loader.dataloader_v1 import DataGen
 from vietocr.loader.dataloader import OCRDataset, ClusterRandomSampler, Collator
 from torch.utils.data import DataLoader
@@ -27,6 +28,7 @@ import numpy as np
 import os
 import matplotlib.pyplot as plt
 import time
+import random
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)
 print = std_tqdm.write
@@ -149,50 +151,79 @@ class Trainer():
                 self.logger.log(info)
 
             if self.valid_annotation and self.iter % self.valid_every == 0:
-                # val_loss = self.validate()
-                val_loss = "N/A"
-                acc_full_seq, acc_per_char = self.precision(self.metrics)
-
-                info = f'iter: {self.iter:06d} - valid loss: {val_loss} - acc full seq: {acc_full_seq:.4f} - acc per char: {acc_per_char:.4f}'
-                print(info)
+                metrics = self.validate()
+                val_loss = metrics['val_loss']
+                acc_full_seq = metrics['acc_full_seq']
+                acc_per_char = metrics['acc_per_char']
+                info = ' '.join([
+                    f'iter: {self.iter:06d}',
+                    f'valid loss: {val_loss:.4f}',
+                    f'acc full seq: {acc_full_seq:.4f}',
+                    f'acc per char: {acc_per_char:.4f}',
+                ])
+                self.print(info)
                 self.logger.log(info)
 
                 if acc_full_seq > best_acc:
                     self.save_weights(self.export_weights)
                     best_acc = acc_full_seq
 
+    @torch.no_grad()
     def validate(self):
         self.model.eval()
 
-        total_loss = []
-        total = len(self.valid_gen)
-        with torch.no_grad():
-            pbar = tqdm(
-                enumerate(self.valid_gen),
-                "Validating",
-                total=total
-            )
-            for step, batch in pbar:
-                batch = self.batch_to_device(batch)
-                img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
-                    'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
+        metrics = dict(
+            val_loss=AverageStatistic(),
+            acc_per_char=AverageStatistic(),
+            acc_full_seq=AverageStatistic()
+        )
+        all_pr_sents = []
+        all_gt_sents = []
 
-                outputs = self.model(img, tgt_input, tgt_padding_mask)
-#                loss = self.criterion(rearrange(outputs, 'b t v -> (b t) v'), rearrange(tgt_output, 'b o -> (b o)'))
+        pbar = tqdm(
+            enumerate(self.valid_gen),
+            "Validating",
+            total=len(self.valid_gen)
+        )
+        for step, batch in pbar:
+            batch = self.batch_to_device(batch)
+            img = batch['img'].to(self.device)
+            tgt_output = batch['tgt_output'].to(self.device)
 
-                outputs = outputs.flatten(0, 1)
-                tgt_output = tgt_output.flatten()
-                loss = self.criterion(outputs, tgt_output)
+            # Predict, no teacher forcing
+            translated, _, outputs = translate(img, self.model)
 
-                total_loss.append(loss.item())
+            # Validation loss
+            outputs = outputs.flatten(0, 1)
+            loss = self.criterion(outputs, tgt_output.flatten()).item()
 
-                del outputs
-                del loss
+            # Validation accuracy
+            pr_sents = self.vocab.batch_decode(translated.tolist())
+            gt_sents = self.vocab.batch_decode(tgt_output.tolist())
+            acc_pc = compute_accuracy(pr_sents, gt_sents, 'per_char')
+            acc_fs = compute_accuracy(pr_sents, gt_sents, 'full_sequence')
 
-        total_loss = np.mean(total_loss)
-        self.model.train()
+            # Append results
+            all_pr_sents.extend(pr_sents)
+            all_gt_sents.extend(gt_sents)
 
-        return total_loss
+            metrics['val_loss'].append(loss)
+            metrics['acc_per_char'].append(acc_pc)
+            metrics['acc_full_seq'].append(acc_fs)
+
+        # Tbp = To be printed
+        # Print some random samples results
+        # TODO: num printing samples (k)
+        tbp = random.choices(range(len(all_pr_sents)), k=5)
+        tbp = [
+            f"GT:   {all_gt_sents[i]}\nPR:   {all_pr_sents[i]}"
+            for i in tbp
+        ]
+        self.print(("\n~~~~~~~~~\n").join(tbp))
+
+        # Return average metrics
+        means = {k: s.summarize() for k, s in metrics.items()}
+        return means
 
     def predict(self, sample=None):
         pred_sents = []
@@ -203,16 +234,14 @@ class Trainer():
         for batch in pbar:
             batch = self.batch_to_device(batch)
 
-            if self.beamsearch:
-                translated_sentence = batch_translate_beam_search(
-                    batch['img'], self.model)
-                prob = None
-            else:
-                translated_sentence, prob = translate(batch['img'], self.model)
+            translated_sentence, prob = translate(batch['img'], self.model)
 
-            pred_sent = self.vocab.batch_decode(translated_sentence.tolist())
-            actual_sent = self.vocab.batch_decode(batch['tgt_output'].tolist())
-
+            pred_sent = self.vocab.decode(translated_sentence.tolist())
+            actual_sent = self.vocab.decode(batch['tgt_output'].tolist())
+            for (p, g) in zip(pred_sent, actual_sent):
+                print(f"= {p}")
+                print(f"< {g}")
+                print("~" * 10)
             # img_files.extend(batch['filenames'])
 
             pred_sents.extend(pred_sent)
@@ -403,3 +432,7 @@ class Trainer():
         loss_item = loss.item()
 
         return loss_item
+
+    def print(self, *args, delim=", "):
+        info = delim.join(args)
+        std_tqdm.write(info)

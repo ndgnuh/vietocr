@@ -4,6 +4,7 @@ import yaml
 import numpy as np
 import uuid
 import requests
+from thefuzz import fuzz
 
 
 def download_weights(id_or_url, cached=None, md5=None, quiet=False):
@@ -21,6 +22,24 @@ def download_config(id):
     r = requests.get(url)
     config = yaml.safe_load(r.text)
     return config
+
+
+def compute__accuracies(predictions, ground_truths):
+    good = [1 if prediction == ground_truth else 0
+            for prediction, ground_truth in zip(predictions, ground_truths)]
+    return sum(good) / len(good)
+
+
+def compute_full_sequence_accuracies(predictions, ground_truths):
+    good = [1 if prediction == ground_truth else 0
+            for prediction, ground_truth in zip(predictions, ground_truths)]
+    return sum(good) / len(good)
+
+
+def compute_perchar_accuracies(predictions, ground_truths):
+    good = [fuzz.ratio(prediction, ground_truth) / 100
+            for prediction, ground_truth in zip(predictions, ground_truths)]
+    return sum(good) / len(good)
 
 
 def compute_accuracy(ground_truth, predictions, mode='full_sequence'):

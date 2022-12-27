@@ -87,7 +87,7 @@ def translate(img, model, max_seq_length=32, sos_token=1, eos_token=2):
 
     feat = model.cnn(img)
     encoder_outputs, hidden = model.transformer.encoder(feat)
-    probs = []
+    logits = []
     input = torch.tensor([sos_token] * batch_size, device=device)
     translated = []
     for i in range(max_seq_length):
@@ -98,15 +98,15 @@ def translate(img, model, max_seq_length=32, sos_token=1, eos_token=2):
         )
         input = torch.argmax(prob, dim=-1)
         translated.append(input)
-        probs.append(prob)
+        logits.append(prob)
 
-    probs = torch.stack(probs, dim=0)
-    probs, _ = probs.topk(k=1, dim=-1)
+    logits = torch.log_softmax(torch.stack(logits, dim=0), dim=-1)
+    probs, _ = logits.topk(k=1, dim=-1)
 
     translated = torch.stack(translated, dim=1)
     probs = (probs.sum(dim=0) / (probs > 0).count_nonzero(dim=0)).squeeze(-1)
 
-    return translated, probs
+    return translated, probs, logits
 
 
 def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
