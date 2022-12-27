@@ -195,7 +195,8 @@ class Trainer():
             tgt_output = batch['tgt_output'].to(self.device)
 
             # Predict, no teacher forcing
-            outputs = self.model(img)
+            # the tgt output is only for seq length
+            outputs = self.model(img, tgt_output)
             probs, translated = outputs.topk(k=1, dim=-1)
             # TODO: add confidence to prediction
             # perferably to the predictor, so the the outputs

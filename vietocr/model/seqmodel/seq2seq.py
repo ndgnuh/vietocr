@@ -160,7 +160,7 @@ class Seq2Seq(nn.Module):
         if trg is None:
             max_sequence_length = 32
         else:
-            max_sequence_length = trg.shape[0]
+            max_sequence_length = trg.shape[1]
 
         if self.training:
             for input in trg:
