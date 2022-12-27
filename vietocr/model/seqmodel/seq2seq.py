@@ -144,11 +144,10 @@ class Seq2Seq(nn.Module):
 
         return output, (hidden, encoder_outputs)
 
-    def forward(self, feat, trg):
+    def forward(self, feat, trg=None):
         """
-        src: time_step x batch_size
-        trg: time_step x batch_size
-        outputs: batch_size x time_step x vocab_size
+        src: time_step * batch_size * hidden
+        trg: batch_size * time_step
         """
 
         encoder_outputs, hidden = self.encoder(feat)
@@ -157,6 +156,11 @@ class Seq2Seq(nn.Module):
         logits = []
         sos_token = 1
         input = torch.tensor([sos_token] * batch_size, device=feat.device)
+
+        if trg is None:
+            max_sequence_length = 32
+        else:
+            max_sequence_length = trg.shape[0]
 
         if self.training:
             for input in trg:
@@ -167,7 +171,7 @@ class Seq2Seq(nn.Module):
                 )
                 logits.append(prob)
         else:
-            for i in range(128):
+            for i in range(max_sequence_length):
                 prob, hidden, _ = self.decoder(
                     input,
                     hidden,

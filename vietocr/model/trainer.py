@@ -203,11 +203,6 @@ class Trainer():
             # probs = probs.squeeze(-1)
             translated = translated.squeeze(-1)
 
-            # Trim the output
-            # because of the different in the target sequence length
-            # and the size imposed when inferring in val mode
-            outputs = outputs[:, :tgt_output.shape[1], :]
-
             # Validation loss
             # CE Loss requires (batch, class, ...)
             loss = self.criterion(outputs.transpose(-1, 1), tgt_output).item()
