@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import time
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)
-print = std_tqdm.print
+print = std_tqdm.write
 
 
 class Trainer():
@@ -213,7 +213,7 @@ class Trainer():
             pred_sent = self.vocab.batch_decode(translated_sentence.tolist())
             actual_sent = self.vocab.batch_decode(batch['tgt_output'].tolist())
 
-            img_files.extend(batch['filenames'])
+            # img_files.extend(batch['filenames'])
 
             pred_sents.extend(pred_sent)
             actual_sents.extend(actual_sent)
