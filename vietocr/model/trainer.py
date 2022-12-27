@@ -20,12 +20,16 @@ import torchvision
 
 from vietocr.tool.utils import compute_accuracy
 from PIL import Image
-from tqdm import tqdm
+from functools import partial
+from tqdm import tqdm as std_tqdm
 from os import path
 import numpy as np
 import os
 import matplotlib.pyplot as plt
 import time
+
+tqdm = partial(std_tqdm, dynamic_ncols=True)
+print = std_tqdm.print
 
 
 class Trainer():
