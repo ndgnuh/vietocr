@@ -33,7 +33,7 @@ def patched_efficientnet(arch):
 
     net = getattr(vision_models, arch)(num_classes=1).features
     net = patcher.patch_net(net, patch, condition)
-    net = patcher.patch_net(net, patch_remove_se, condition_remove_se)
+    # net = patcher.patch_net(net, patch_remove_se, condition_remove_se)
     return net
 
 
