@@ -2,7 +2,7 @@ pyyaml
 torch
 torchvision 
 gdown
-numpy
+numpy==1.23.1
 six
 requests
 imgaug
