@@ -5,7 +5,7 @@ from PIL import Image
 from torch.nn.functional import log_softmax, softmax
 
 from vietocr.model.transformerocr import VietOCR
-from vietocr.model.vocab import Vocab
+from vietocr.model.vocab import Vocab, VocabS2S
 from vietocr.model.beam import Beam
 
 
@@ -157,7 +157,7 @@ def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
 
 
 def build_model(config):
-    vocab = Vocab(config['vocab'])
+    vocab = VocabS2S(config['vocab'])
     device = config['device']
 
     model = VietOCR(len(vocab),

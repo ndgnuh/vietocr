@@ -114,7 +114,7 @@ class Vocab(metaclass=ABCMeta):
 
 class VocabS2S(Vocab):
     def get_special_tokens(self):
-        return ["sos", "pad", "eos", "other"]
+        return ["pad", "sos", "eos", "other"]
 
     def encode(self, chars, max_length=None):
         vocab = self.chars
