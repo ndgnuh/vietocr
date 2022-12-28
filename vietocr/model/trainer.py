@@ -12,7 +12,12 @@ import yaml
 import torch
 from vietocr.tool.stats import AverageStatistic
 from vietocr.loader.dataloader_v1 import DataGen
-from vietocr.loader.dataloader import OCRDataset, ClusterRandomSampler, Collator
+from vietocr.loader.dataloader import (
+    OCRDataset,
+    ClusterRandomSampler,
+    Collator,
+    collate_dlen_labels
+)
 from torch.utils.data import DataLoader
 from einops import rearrange
 from torch.optim.lr_scheduler import CosineAnnealingLR, CyclicLR, OneCycleLR
@@ -56,6 +61,7 @@ class CTCLoss(nn.Module):
         )
 
         # ctc loss
+
         loss = self.ctc(logits, targets, input_lengths, target_lengths)
         return loss
 
@@ -107,10 +113,11 @@ class Trainer():
 #            512,
 #            **config['optimizer'])
 
-        self.criterion = nn.CrossEntropyLoss(
-            ignore_index=self.vocab.pad_id,
-            label_smoothing=0.1
-        )
+        # self.criterion = nn.CrossEntropyLoss(
+        #     ignore_index=self.vocab.pad_id,
+        #     label_smoothing=0.1
+        # )
+        self.criterion = CTCLoss(blank=self.vocab.blank_id, zero_infinity=True)
         # self.criterion = LabelSmoothingLoss(
         #     len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
 
@@ -230,11 +237,19 @@ class Trainer():
             # probs = probs.squeeze(-1)
             translated = translated.squeeze(-1)
 
+            # TODO: condition for this transpose, only CTC need transpose
+            translated = translated.transpose(0, 1)
+
             # Validation loss
             # CE Loss requires (batch, class, ...)
-            loss = self.criterion(outputs.transpose(-1, 1), tgt_output).item()
+            if isinstance(self.criterion, nn.CrossEntropyLoss):
+                loss = self.criterion(
+                    outputs.transpose(-1, 1), tgt_output).item()
+            else:
+                loss = self.criterion(outputs, tgt_output).item()
 
             # Validation accuracy
+            # ic(translated.shape, tgt_output.shape)
             pr_sents = self.vocab.batch_decode(translated.tolist())
             gt_sents = self.vocab.batch_decode(tgt_output.tolist())
             acc_pc = compute_accuracy(pr_sents, gt_sents, 'per_char')
@@ -251,6 +266,7 @@ class Trainer():
         # Tbp = To be printed
         # Print some random samples results
         # TODO: num printing samples (k)
+        ic(len(all_gt_sents), len(all_pr_sents))
         tbp = random.choices(range(len(all_pr_sents)), k=5)
         tbp = [
             f"GT:   {all_gt_sents[i]}\nPR:   {all_pr_sents[i]}"
@@ -401,13 +417,15 @@ class Trainer():
         img = batch['img'].to(self.device, non_blocking=True)
         tgt_input = batch['tgt_input'].to(self.device, non_blocking=True)
         tgt_output = batch['tgt_output'].to(self.device, non_blocking=True)
-        tgt_padding_mask = batch['tgt_padding_mask'].to(
-            self.device, non_blocking=True)
+        # tgt_padding_mask = batch['tgt_padding_mask'].to(
+        #     self.device, non_blocking=True)
 
         batch = {
-            'img': img, 'tgt_input': tgt_input,
-            'tgt_output': tgt_output, 'tgt_padding_mask': tgt_padding_mask,
-            'filenames': batch['filenames']
+            'img': img,
+            'tgt_input': tgt_input,
+            'tgt_output': tgt_output,
+            # 'tgt_padding_mask': tgt_padding_mask,
+            # 'filenames': batch['filenames']
         }
 
         return batch
@@ -421,13 +439,12 @@ class Trainer():
                              image_max_width=self.config['dataset']['image_max_width'])
 
         sampler = ClusterRandomSampler(dataset, self.batch_size, True)
-        collate_fn = Collator(masked_language_model)
 
         gen = DataLoader(
             dataset,
             batch_size=self.batch_size,
             sampler=sampler,
-            collate_fn=collate_fn,
+            collate_fn=collate_dlen_labels,
             shuffle=False,
             drop_last=False,
             **self.config['dataloader'])
@@ -446,14 +463,15 @@ class Trainer():
         self.model.train()
 
         batch = self.batch_to_device(batch)
-        img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
-            'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
+        img, tgt_input, tgt_output = batch['img'], batch['tgt_input'], batch['tgt_output']
 
-        outputs = self.model(
-            img, tgt_input, tgt_key_padding_mask=tgt_padding_mask)
+        outputs = self.model(img, tgt_input)
 
         # CE Loss requires (batch, class, ...)
-        loss = self.criterion(outputs.transpose(-1, 1), tgt_output)
+        if isinstance(self.criterion, nn.CrossEntropyLoss):
+            loss = self.criterion(outputs.transpose(-1, 1), tgt_output)
+        else:
+            loss = self.criterion(outputs, tgt_output)
 
         self.optimizer.zero_grad()
 

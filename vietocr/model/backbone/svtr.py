@@ -75,15 +75,14 @@ class SVTREmbedding(nn.Module):
         self.to_img = Rearrange("b (h w) c -> b c h w", h=h, w=w)
 
     def forward(self, image):
-        h, w = self.image_size
-        oh, ow = image.shape[-2:]
-        image = image[..., :h, :w]
-        image = F.pad(image, (0, w-ow, 0, h-oh))
+        # h, w = self.image_size
+        # oh, ow = image.shape[-2:]
+        # image = image[..., :h, :w]
+        # image = F.pad(image, (0, w-ow, 0, h-oh))
         patch_embedding = self.patch_embedding(image)
         positional_embedding = self.positional_embedding()
         patch_embedding = self.to_seq(patch_embedding)
-        b, p, d = patch_embedding.shape
-        embedding = patch_embedding + positional_embedding[:, :p, :]
+        embedding = patch_embedding + positional_embedding
         embedding = self.to_img(embedding)
         return embedding
 

@@ -23,6 +23,10 @@ class VietOCR(nn.Module):
             self.transformer = Seq2Seq(vocab_size, **transformer_args)
         elif seq_modeling == 'convseq2seq':
             self.transformer = ConvSeq2Seq(vocab_size, **transformer_args)
+        elif seq_modeling is None:
+            self.transformer = nn.Sequential(
+                nn.Linear(transformer_args['hidden_size'], vocab_size),
+            )
         else:
             raise('Not Support Seq Model')
 
@@ -43,4 +47,6 @@ class VietOCR(nn.Module):
             outputs = self.transformer(src, tgt_input)
         elif self.seq_modeling == 'convseq2seq':
             outputs = self.transformer(src, tgt_input)
+        elif self.seq_modeling is None:
+            outputs = self.transformer(src)
         return outputs
