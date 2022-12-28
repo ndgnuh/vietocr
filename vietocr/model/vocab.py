@@ -144,7 +144,14 @@ class VocabCTC(Vocab):
         return ["blank"]
 
     def encode(self, chars, max_length=None):
-        ids = [self.c2i.get(c, self.blank_id) for c in chars]
+        # chars = unidecode_string(chars, self.chars)
+        ids = []
+        prev = None
+        for c in chars:
+            if prev == c:
+                ids.append(self.blank_id)
+            ids.append(self.c2i.get(c, self.blank_id))
+            prev = c
         if max_length:
             n = len(ids)
             assert n <= max_length
