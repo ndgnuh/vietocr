@@ -56,14 +56,14 @@ def compute_accuracy(ground_truth, predictions, mode='full_sequence'):
                  avg_label_accuracy = sum(single_label_accuracy) / label_nums
     :return: avg_label_accuracy
     """
-    if mode == 'per_char':
-        scores = [fuzz.ratio(pr, gt) for (pr, gt)
-                  in zip(ground_truth, predictions)]
-        return sum(scores) / len(scores) / 100
-    if mode == 'full_sequence':
-        scores = [1 if pr == gt else 0 for (pr, gt)
-                  in zip(ground_truth, predictions)]
-        return sum(scores) / len(scores)
+    # if mode == 'per_char':
+    #     scores = [fuzz.ratio(pr, gt) for (pr, gt)
+    #               in zip(ground_truth, predictions)]
+    #     return sum(scores) / len(scores) / 100
+    # if mode == 'full_sequence':
+    #     scores = [1 if pr == gt else 0 for (pr, gt)
+    #               in zip(ground_truth, predictions)]
+    #     return sum(scores) / len(scores)
 
     if mode == 'per_char':
 
