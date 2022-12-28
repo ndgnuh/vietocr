@@ -108,8 +108,9 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, vocab_size, encoder_hidden, decoder_hidden, img_channel, decoder_embedded, dropout=0.1):
+    def __init__(self, vocab_size, encoder_hidden, decoder_hidden, img_channel, decoder_embedded, sos_token_id, dropout=0.1):
         super().__init__()
+        self.sos_token_id = sos_token_id
 
         attn = Attention(encoder_hidden, decoder_hidden)
 
@@ -154,8 +155,8 @@ class Seq2Seq(nn.Module):
 
         batch_size = feat.shape[1]
         logits = []
-        sos_token = 1
-        input = torch.tensor([sos_token] * batch_size, device=feat.device)
+        input = torch.tensor([self.sos_token_id] * batch_size,
+                             device=feat.device)
 
         if trg is None:
             max_sequence_length = 32
