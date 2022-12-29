@@ -12,8 +12,9 @@ def find_common_root(files):
 
 
 def append_common_root(root, file):
+    diff = path.dirname(file).replace(root, "").lstrip("/")
     with open(file, "r", encoding="utf-8") as f:
-        annotations = [path.join(root, line.strip())
+        annotations = [path.join(diff, line.strip())
                        for line in f.readlines()]
     return "\n".join(annotations)
 
