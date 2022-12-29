@@ -23,5 +23,9 @@ def get_chars(lang):
     return read_vocab_file(vocab_files[lang])
 
 
+def list_vocabs():
+    return list(vocab_files.keys())
+
+
 def get_vocab(lang):
     return VocabS2S(get_chars(lang))
