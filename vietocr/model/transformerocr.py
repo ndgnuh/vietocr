@@ -2,6 +2,7 @@ from vietocr.model.backbone.cnn import CNN
 from vietocr.model.seqmodel.transformer import LanguageTransformer
 from vietocr.model.seqmodel.seq2seq import Seq2Seq
 from vietocr.model.seqmodel.convseq2seq import ConvSeq2Seq
+from vietocr.model.stn import SpatialTransformer
 from torch import nn
 
 
@@ -12,7 +13,7 @@ class VietOCR(nn.Module):
                  transformer_args, seq_modeling='transformer'):
 
         super(VietOCR, self).__init__()
-
+        self.stn = SpatialTransformer(2)
         self.cnn = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
 
@@ -34,6 +35,7 @@ class VietOCR(nn.Module):
             - tgt_key_padding_mask: (N, T)
             - output: b t v
         """
+        img = self.stn(img)
         src = self.cnn(img)
 
         if self.seq_modeling == 'transformer':
