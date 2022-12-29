@@ -68,9 +68,9 @@ def createDataset(output_path: str,
                 imageFile, label = annotations[cnt]
                 imagePath = os.path.join(root_dir, imageFile)
 
-                if not os.path.exists(imagePath):
-                    error += 1
-                    continue
+                # if not os.path.exists(imagePath):
+                #     error += 1
+                #     continue
 
                 with open(imagePath, 'rb') as f:
                     imageBin = f.read()

@@ -1,4 +1,4 @@
-import unidecode
+from unidecode import unidecode
 from abc import abstractmethod, ABCMeta
 
 
@@ -9,48 +9,92 @@ def read_vocab_file(file):
         return list(vocab)
 
 
-def replace_at(s, i, sub):
-    left, right = s[:i], s[(i + 1):]
-    return f"{left}{sub}{right}"
+# def replace_at(s, i, sub):
+#     left, right = s[:i], s[(i + 1):]
+#     return f"{left}{sub}{right}"
 
 
-def unidecode_string(s, vocab, max_iteration=10):
-    custom_mapping = {"−": "-", "Ð": "Đ"}
-    prev_i = 0
-    n = len(s)
-    prev_s = None
-    # print("==============================")
-    # print("String:", s)
+CUSTOM_MAPPINGS = {"−": "-", "Ð": "Đ"}
+
+
+def replace_at(s, i, r):
+    return f"{s[:i]}{r}{s[i+1:]}"
+
+
+def sanitize(s, vocab, replacement=None):
+    s = s.replace("\n", " ")
+    s = s.replace("\r", " ")
+    s = s.replace("  ", " ")
+    # previous string
+    prev = None
+    prev_index = 0
     while True:
-        # print(s)
-        # If previous string is the same, return
-        if prev_s == s:
-            return s
-
-        # Loop through and replace
-        all_in_vocab = True
-        for i in range(prev_i, n):
+        prev = s
+        for i in range(prev_index, len(s)):
             c = s[i]
-            # Replace with char inside vocab
-            if c not in vocab:
-                all_in_vocab = False
-                # print('- char', c)
-                replacement = custom_mapping.get(c, unidecode.unidecode(c))
-                if any([r not in vocab for r in replacement]):
-                    print(
-                        f"Warning: replacement {replacement} not in vocab, using blank")
-                    replacement = ""
-                prev_s = s
-                s = replace_at(s, i, replacement)
 
-                # Store index to loop efficiently
-                prev_i = i
+            # SKIP WHITE SPACE
+            if c in "\n\r":
                 continue
 
-        if all_in_vocab:
-            break
-    # print("Result:", s)
-    return s
+            # NORMAL
+            if c in vocab:
+                continue
+
+            # REPLACE WITH CUSTOM MAPPING
+            if c in CUSTOM_MAPPINGS:
+                s = replace_at(s, i, CUSTOM_MAPPINGS[c])
+                prev_index = i
+                break
+
+            # PREPLACE WITH UNIDECODE
+            if c not in vocab:
+                replace = unidecode(c)
+                s = replace_at(s, i, replace)
+                prev_index = i
+                break
+
+        if prev == s:
+            return s
+
+
+# def unidecode_string(s, vocab, max_iteration=10):
+#     custom_mapping = {"−": "-", "Ð": "Đ"}
+#     prev_i = 0
+#     n = len(s)
+#     prev_s = None
+#     # print("==============================")
+#     # print("String:", s)
+#     while True:
+#         # print(s)
+#         # If previous string is the same, return
+#         if prev_s == s:
+#             return s
+
+#         # Loop through and replace
+#         all_in_vocab = True
+#         for i in range(prev_i, n):
+#             c = s[i]
+#             # Replace with char inside vocab
+#             if c not in vocab:
+#                 all_in_vocab = False
+#                 # print('- char', c)
+#                 replacement = custom_mapping.get(c, unidecode.unidecode(c))
+#                 if any([r not in vocab for r in replacement]):
+#                     print(
+#                         f"Warning: replacement {replacement} not in vocab, using blank")
+#                     replacement = ""
+#                 prev_s = s
+#                 s = replace_at(s, i, replacement)
+
+#                 # Store index to loop efficiently
+#                 prev_i = i
+#                 continue
+
+#         if all_in_vocab:
+#             break
+#     # print("Result:", s)
+#     return s
 
 
 class Vocab(metaclass=ABCMeta):
@@ -118,7 +162,7 @@ class VocabS2S(Vocab):
 
     def encode(self, chars, max_length=None):
         vocab = self.chars
-        chars = unidecode_string(chars, vocab)
+        chars = sanitize(chars, vocab)
         seq = [self.c2i.get(c, self.other_id) for c in chars]
         if max_length is not None:
             n = len(seq)
