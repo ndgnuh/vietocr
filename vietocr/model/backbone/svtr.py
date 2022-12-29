@@ -421,11 +421,11 @@ class RecSVTR(nn.Module):
         self.svtr = eval(arch)(output_size=output_size, image_size=image_size)
 
         # Attention
-        # self.Q = nn.Linear(output_size, output_size)
-        # self.K = nn.Linear(output_size, output_size)
-        # self.V = nn.Linear(output_size, output_size)
-        # self.dropout = nn.Dropout(0.1)
-        # self.hidden_sqtr = torch.tensor(output_size).sqrt()
+        self.Q = nn.Linear(output_size, output_size)
+        self.K = nn.Linear(output_size, output_size)
+        self.V = nn.Linear(output_size, output_size)
+        self.dropout = nn.Dropout(0.1)
+        self.hidden_sqtr = torch.tensor(output_size).sqrt()
 
         assert self.width % self.stride == 0
 
@@ -440,20 +440,15 @@ class RecSVTR(nn.Module):
         outputs = torch.cat(outputs, dim=0)
 
         # Attention
-        # Q = self.Q(outputs)
-        # K = self.K(outputs)
-        # V = self.V(outputs)
-        # energy = torch.einsum('mabc,nabc->abcmn', Q, K)
-        # energy = self.dropout(torch.softmax(energy / self.hidden_sqtr, dim=-1))
-        # outputs = torch.einsum('mabc,abcnm->abcm', V, energy)
+        Q = self.Q(outputs)
+        K = self.K(outputs)
+        V = self.V(outputs)
+        energy = torch.einsum('mabc,nabc->abcmn', Q, K)
+        energy = self.dropout(torch.softmax(energy / self.hidden_sqtr, dim=-1))
+        outputs = torch.einsum('mabc,abcnm->abcm', V, energy)
 
         # Reshape
         # a b c m -> m a b c
-        # outputs = outputs.permute((-1, 0, 1, 2))
-        # outputs = outputs.flatten(0, 1)
+        outputs = outputs.permute((-1, 0, 1, 2))
+        outputs = outputs.flatten(0, 1)
         return outputs
-
-
-# model = RecSVTR(256, (32, 64), stride=32)
-# x = torch.rand(1, 3, 32, 512)
-# model(x)
