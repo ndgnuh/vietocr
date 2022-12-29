@@ -166,7 +166,7 @@ def build_model(config):
                     config['transformer'],
                     config['seq_modeling'],
                     stn=config.get('stn', 0))
-
+    print(model)
     model = model.to(device)
 
     return model, vocab
