@@ -8,7 +8,8 @@ from vietocr.model.backbone.svtr import (
     svtr_b,
     svtr_l,
     svtr_s,
-    svtr_t
+    svtr_t,
+    RecSVTR
 )
 from vietocr.model.backbone.mobilenet import (
     mobilenet_v3_large,
@@ -24,6 +25,7 @@ backbone_by_names = {
     "svtr_l": svtr_l,
     "svtr_s": svtr_s,
     "svtr_t": svtr_t,
+    "rsvtr": RecSVTR,
     "efficientnet": PatchedEfficientNet
 }
 backbone_by_names.update(resnet.models)
