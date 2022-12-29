@@ -15,6 +15,7 @@ from vietocr.model.backbone.mobilenet import (
     mobilenet_v3_large,
     mobilenet_v3_small
 )
+from .inception import PatchedInception
 
 backbone_by_names = {
     'vgg11_bn': vgg.vgg11_bn,
@@ -26,7 +27,8 @@ backbone_by_names = {
     "svtr_s": svtr_s,
     "svtr_t": svtr_t,
     "rsvtr": RecSVTR,
-    "efficientnet": PatchedEfficientNet
+    "efficientnet": PatchedEfficientNet,
+    "inception": PatchedInception
 }
 backbone_by_names.update(resnet.models)
 backbone_by_names.update(shufflenet.models)
