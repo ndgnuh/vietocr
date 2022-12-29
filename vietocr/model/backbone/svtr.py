@@ -411,7 +411,8 @@ class RecSVTR(nn.Module):
                  output_size: int,
                  image_size,
                  stride: int = None,
-                 nonlinearity="Tanh"
+                 nonlinearity="Tanh",
+                 dropout: float = 0.1
                  ):
         super().__init__()
 
@@ -424,7 +425,7 @@ class RecSVTR(nn.Module):
         self.Q = nn.Linear(output_size, output_size)
         self.K = nn.Linear(output_size, output_size)
         self.V = nn.Linear(output_size, output_size)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(dropout)
         self.hidden_sqtr = torch.tensor(output_size).sqrt()
 
         assert self.width % self.stride == 0
@@ -437,7 +438,7 @@ class RecSVTR(nn.Module):
             output = self.svtr(inputs)
             outputs.append(output)
 
-        outputs = torch.cat(outputs, dim=0)
+        outputs = torch.stack(outputs, dim=0)
 
         # Attention
         Q = self.Q(outputs)
