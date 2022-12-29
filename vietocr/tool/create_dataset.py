@@ -32,10 +32,10 @@ def writeCache(env, cache):
             txn.put(k.encode(), v)
 
 
-def createDataset(output_path: str,
-                  root_dir: str,
-                  annotation_path: str,
-                  chunk_size: int = 10000):
+def createDataset_(output_path: str,
+                   root_dir: str,
+                   annotation_path: str,
+                   chunk_size: int = 10000):
     """
     Create LMDB dataset for CRNN training.
     ARGS:
@@ -121,7 +121,7 @@ def createDataset(output_path: str,
     print('Created dataset with %d samples' % total)
 
 
-def createDataset_v1(outputPath, root_dir, annotation_path):
+def createDataset(outputPath, root_dir, annotation_path):
     """
     Create LMDB dataset for CRNN training.
     ARGS:
