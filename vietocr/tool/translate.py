@@ -164,7 +164,8 @@ def build_model(config):
                     config['backbone'],
                     config['cnn'],
                     config['transformer'],
-                    config['seq_modeling'])
+                    config['seq_modeling'],
+                    stn=config.get('stn', 0))
 
     model = model.to(device)
 

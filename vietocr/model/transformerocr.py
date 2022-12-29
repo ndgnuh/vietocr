@@ -10,10 +10,11 @@ class VietOCR(nn.Module):
     def __init__(self, vocab_size,
                  backbone,
                  cnn_args,
-                 transformer_args, seq_modeling='transformer'):
+                 transformer_args, seq_modeling='transformer', stn=0):
 
         super(VietOCR, self).__init__()
-        self.stn = SpatialTransformer(2)
+        if stn > 0:
+            self.stn = SpatialTransformer(stn)
         self.cnn = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
 
@@ -35,7 +36,8 @@ class VietOCR(nn.Module):
             - tgt_key_padding_mask: (N, T)
             - output: b t v
         """
-        img = self.stn(img)
+        if hasattr(self, "stn"):
+            img = self.stn(img)
         src = self.cnn(img)
 
         if self.seq_modeling == 'transformer':
