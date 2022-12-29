@@ -6,6 +6,20 @@ from typing import Tuple, List, Optional
 import torch
 
 
+class LearnableMasking(nn.Module):
+    def __init__(self, channel):
+        super().__init__()
+        self.head = nn.Linear(channel, channel)
+        self.tail = nn.Linear(channel, channel)
+
+    def forward(self, img):
+        img = img.flatten(2).transpose(-1, -2)
+        head = self.head(img)
+        tail = self.tail(img)
+        score = torch.einsum('bmc,bnc->mn', head, tail)
+        return score
+
+
 @torch.no_grad()
 def get_output_size(m, shape):
     x = torch.zeros(shape)
