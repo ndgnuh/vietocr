@@ -4,7 +4,11 @@ import yaml
 import numpy as np
 import uuid
 import requests
-from thefuzz import fuzz
+
+
+def annotation_uuid(annotation_file):
+    with open(annotation_file, "r", encodng="utf-8") as f:
+        return uuid.uuid5(uuid.RFC_4122, f.read().strip())
 
 
 def download_weights(id_or_url, cached=None, md5=None, quiet=False):
