@@ -1,3 +1,5 @@
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+
 pretrain: 
     id_or_url: 1nTKlEog9YFK74kPyX0qLwCWi60_YHHk4
     md5: efcabaa6d3adfca8e52bda2fd7d2ee04
@@ -24,6 +26,7 @@ cnn:
         - [1, 1]
     # dim of ouput feature map
     hidden: 256
+    pretrained: false
 
 seq_modeling: seq2seq
 transformer:
@@ -32,6 +35,11 @@ transformer:
     img_channel: 256
     decoder_embedded: 256
     dropout: 0.1
+    sos_token_id: 1
+
+image_height: 32
+image_min_width: 64
+image_max_width: 512
 
 optimizer:
     max_lr: 0.001
