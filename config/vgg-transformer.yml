@@ -1,3 +1,5 @@
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+
 pretrain: 
     id_or_url: 13327Y1tz1ohsm5YZMyXVMPIOjoOA0OaA
     md5: af6b46e9295eb1c27ca90bddf8c8729a
@@ -8,7 +10,7 @@ weights: https://drive.google.com/uc?id=13327Y1tz1ohsm5YZMyXVMPIOjoOA0OaA
 
 backbone: vgg19_bn
 cnn:
-    pretrained: True
+    pretrained: true
     # pooling stride size
     ss:
         - [2, 2]
@@ -26,3 +28,17 @@ cnn:
     # dim of ouput feature map
     hidden: 256
 
+seq_modeling: transformer
+transformer:  
+    d_model: 256
+    nhead: 8
+    num_encoder_layers: 6
+    num_decoder_layers: 6
+    dim_feedforward: 2048
+    max_seq_length: 1024
+    pos_dropout: 0.1
+    trans_dropout: 0.1
+
+image_height: 32
+image_min_width: 64
+image_max_width: 512
