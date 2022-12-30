@@ -6,6 +6,7 @@ from icecream import install
 from os import path
 from pprint import pprint
 from vietocr.tool.dict_utils import merge_dict
+from vietocr.tool.config import get_config
 
 install()
 
@@ -24,16 +25,7 @@ def train(config, args):
     # Keep the script fast for other purpose
     from vietocr.model.trainer import Trainer
 
-
     trainer = Trainer(config)
-
-    # Weight
-    if args.continue_weight is not None:
-        trainer.load_weights(args.continue_weight)
-
-    if args.checkpoint is not None:
-        trainer.load_checkpoint(checkpoint)
-
     trainer.train()
 
 
@@ -79,9 +71,8 @@ def main():
     # keeping the option as --config
     parser.add_argument(
         '-c', '--config',
-        action="append",
-        dest="configs",
-        default=[path.join("config", "base.yml")],
+        dest="config",
+        required=True,
         help="config files, latter ones will merge/override the formers"
     )
     sp = parser.add_subparsers(dest='action', required=True)
@@ -89,15 +80,10 @@ def main():
     # Train
     train_parser = sp.add_parser('train')
     train_parser.add_argument(
-        '--continue',
-        dest="continue_weight",
-        required=False,
-        help='Continue training from this weight')
-    train_parser.add_argument(
-        '--checkpoint',
-        dest="checkpoint",
-        required=False,
-        help='your checkpoint')
+        '-e',
+        '--experiment',
+        dest="training",
+        required=True)
 
     # Export
     export_parser = sp.add_parser('export')
@@ -109,10 +95,12 @@ def main():
     # Dump config file
     sp.add_parser('dump')
     args = parser.parse_args()
-    action = args.action
-    configs = [read_yaml(config_file) for config_file in args.configs]
-    config = merge_dict(*configs)
+    print(args)
+    config = get_config(args.config)
+    config['training'] = get_config(args.training)
 
+    # Dispatch
+    action = args.action
     if action == "train":
         train(config, args)
     elif action == "export":

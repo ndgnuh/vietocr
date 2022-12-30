@@ -95,6 +95,7 @@ class Trainer():
         self.iter = 0
 
         self.optimizer = AdamW(self.model.parameters(),
+                               lr=config['training']['max_lr'],
                                betas=(0.9, 0.98), eps=1e-09)
         self.scheduler = OneCycleLR(
             self.optimizer,
