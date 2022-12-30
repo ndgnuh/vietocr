@@ -2,17 +2,38 @@ import yaml
 from os import path
 from vietocr.tool.utils import download_config
 
+thisdir = path.dirname(__file__)
+
 url_config = {
-    'svtr-t': 'svtr-t-seq2seq.yml',
-    'mobilenet_v3_large': 'backbones/mobilenet_v3_large.yml',
+    'inception': 'inception_s2s.yml',
+    # 'svtr-t': 'svtr-t-seq2seq.yml',
+    # 'mobilenet_v3_large': 'backbones/mobilenet_v3_large.yml',
     'vgg_transformer': 'vgg-transformer.yml',
-    'resnet_transformer': 'resnet_transformer.yml',
-    'resnet_fpn_transformer': 'resnet_fpn_transformer.yml',
+    # 'resnet_transformer': 'resnet_transformer.yml',
+    # 'resnet_fpn_transformer': 'resnet_fpn_transformer.yml',
     'vgg_seq2seq': 'vgg-seq2seq.yml',
-    'vgg_convseq2seq': 'vgg_convseq2seq.yml',
-    'vgg_decoderseq2seq': 'vgg_decoderseq2seq.yml',
-    'base': 'base.yml',
+    # 'vgg_convseq2seq': 'vgg_convseq2seq.yml',
+    # 'vgg_decoderseq2seq': 'vgg_decoderseq2seq.yml',
+    # 'base': 'base.yml',
 }
+
+
+def list_configs():
+    return list(url_config.keys())
+
+
+def read_yaml(fpath: str):
+    with open(fpath, encoding='utf-8') as f:
+        return yaml.load(f, Loader=yaml.FullLoader)
+
+
+def get_config(name_or_path: str):
+    if name_or_path in url_config:
+        config_path = url_config[name_or_path]
+    else:
+        config_path = name_or_path
+
+    return read_yaml(path.join(thisdir, "..", "..", "config", config_path))
 
 
 class Cfg(dict):
