@@ -30,10 +30,14 @@ def read_yaml(fpath: str):
 def get_config(name_or_path: str):
     if name_or_path in url_config:
         config_path = url_config[name_or_path]
+        config_path = path.join(thisdir, "..", "..", "config", config_path)
     else:
         config_path = name_or_path
 
-    return read_yaml(path.join(thisdir, "..", "..", "config", config_path))
+    config_path = path.normpath(config_path)
+    config = read_yaml(config_path)
+    config['name'] = path.splitext(path.basename(config_path))[0]
+    return config
 
 
 class Cfg(dict):

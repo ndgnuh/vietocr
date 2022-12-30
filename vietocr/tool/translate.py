@@ -7,6 +7,7 @@ from torch.nn.functional import log_softmax, softmax
 from vietocr.model.transformerocr import VietOCR
 from vietocr.model.vocab import Vocab, VocabS2S
 from vietocr.model.beam import Beam
+from . import utils
 
 
 def batch_translate_beam_search(img, model, beam_size=4, candidates=1, max_seq_length=128, sos_token=1, eos_token=2):
@@ -158,7 +159,7 @@ def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
 
 def build_model(config):
     vocab = VocabS2S(config['vocab'])
-    device = config['device']
+    device = utils.get_device(config.get('device', None))
 
     model = VietOCR(len(vocab),
                     config['backbone'],

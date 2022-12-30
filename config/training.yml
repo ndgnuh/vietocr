@@ -1,0 +1,20 @@
+# Optimizer
+max_lr: 0.00005 
+pct_start: 0.1
+
+# Trainer
+print_every: 200
+valid_every: 200
+iters: 1_000_000
+
+# Dataset
+train_annotation: data/dict_02/train.txt
+valid_annotation: data/dict_02/val.txt
+
+# Data loader
+dl_batch_size: 32
+dl_num_workers: 3
+dl_pin_memory: True
+
+# Augmentation
+augment: true

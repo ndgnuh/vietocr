@@ -6,9 +6,22 @@ import uuid
 import requests
 
 
+def get_device(device=None):
+    if device is not None:
+        return device
+
+    from torch.cuda import is_available
+    if is_available():
+        return 'cuda'
+    else:
+        return 'cpu'
+
+
 def annotation_uuid(annotation_file):
-    with open(annotation_file, "r", encodng="utf-8") as f:
-        return uuid.uuid5(uuid.RFC_4122, f.read().strip())
+    with open(annotation_file, "r", encoding="utf-8") as f:
+        # This is for DNS, but that doesn't matter
+        id = uuid.uuid5(uuid.NAMESPACE_DNS, f.read().strip())
+        return str(id)
 
 
 def download_weights(id_or_url, cached=None, md5=None, quiet=False):
