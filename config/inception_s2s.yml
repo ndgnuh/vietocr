@@ -1,6 +1,8 @@
 # change to list chars of your dataset or use default vietnamese chars
 vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 
+weights: https://github.com/ndgnuh/vietocr/releases/download/weights/inception_s2s.pth
+
 backbone: inception
 cnn:
   dropout: 0.1
@@ -14,7 +16,3 @@ transformer:
     decoder_embedded: 256
     dropout: 0.1
     sos_token_id: 1
-
-
-trainer:
-  batch_size: 8
