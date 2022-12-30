@@ -181,3 +181,30 @@ class VocabS2S(Vocab):
             ids = ids[first:]
         sent = ''.join([self.i2c[i] for i in ids if self.is_normal_id(i)])
         return sent
+
+
+class VocabCTC(Vocab):
+    def get_special_tokens(self):
+        return ["blank"]
+
+    def encode(self, chars, max_length=None):
+        # chars = unidecode_string(chars, self.chars)
+        ids = []
+        prev = None
+        for c in chars:
+            if prev == c:
+                ids.append(self.blank_id)
+            ids.append(self.c2i.get(c, self.blank_id))
+            prev = c
+        if max_length:
+            n = len(ids)
+            assert n <= max_length
+            ids.extend([self.blank_id] * (max_length - n))
+        return ids
+
+    # greedy ctc decode
+    def decode(self, ids):
+        from itertools import groupby
+        collapsed = [self.i2c[i] for i, _ in groupby(ids)
+                     if i != self.blank_id]
+        return ''.join(collapsed)
