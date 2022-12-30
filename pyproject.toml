@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "black-vietocr"
+version="0.3.9"
+description = "Sequence to sequence? text recognition. Fork of VietOCR"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "Apache-2.0"}
+dependencies = [
+    "pyyaml",
+    "gdown",
+    "numpy",
+    "requests",
+    "opencv-python",
+    "prefetch_generator",
+    "einops",
+    "unidecode",
+    "Pillow",
+    "torch",
+    "torchvision", 
+    "lenses"
+]
+
+
+[[authors]] 
+author = "pbcquoc"
+email = "pbcquoc@gmail.com"
+
+[[authors]] 
+author = "Hung Nguyen"
+email = "ndgnuh@protonmail.com"
+
+[project.optional-dependencies]
+dev = ["imgaug", "lmdb", "matplotlib", "icecream"]
+
+[tool.setuptools]
+packages = ["vietocr"]
