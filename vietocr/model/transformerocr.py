@@ -28,7 +28,7 @@ class VietOCR(nn.Module):
         else:
             raise('Not Support Seq Model')
 
-    def forward(self, img, tgt_input=None, tgt_key_padding_mask=None):
+    def forward(self, img, tgt_input=None, tgt_key_padding_mask=None, teacher_forcing=False):
         """
         Shape:
             - img: (N, C, H, W)
@@ -44,7 +44,11 @@ class VietOCR(nn.Module):
             outputs = self.transformer(
                 src, tgt_input, tgt_key_padding_mask=tgt_key_padding_mask)
         elif self.seq_modeling == 'seq2seq':
-            outputs = self.transformer(src, tgt_input)
+            outputs = self.transformer(
+                src,
+                tgt_input,
+                teacher_forcing=teacher_forcing
+            )
         elif self.seq_modeling == 'convseq2seq':
             outputs = self.transformer(src, tgt_input)
         return outputs

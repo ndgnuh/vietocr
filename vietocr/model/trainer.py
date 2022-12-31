@@ -33,10 +33,30 @@ import os
 import matplotlib.pyplot as plt
 import time
 import random
+from dataclasses import dataclass
 from .. import const
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)
 print = std_tqdm.write
+
+
+@dataclass
+class TeacherForcingScheduler:
+    start_step: int = 0
+    end_step: int = 30000
+    p0: float = 1
+    _step: int = 0
+
+    def current_ratio(self):
+        p = 1 - (self._step - self.start_step) / \
+            (self.end_step - self.start_step)
+        p = self.p0 * p
+        return p
+
+    def step(self):
+        p = self.current_ratio()
+        self._step = self._step + 1
+        return random.random() <= p
 
 
 class Trainer():
@@ -115,6 +135,17 @@ class Trainer():
 
         self.train_losses = []
 
+        # Teacher forcing scheduler
+        # TODO: convert to the name-options format
+        self.tfs = TeacherForcingScheduler(
+            start_step=config['training'].get('teacher_forcing_start', 0),
+            end_step=config['training'].get(
+                'teacher_forcing_end',
+                config['training']['iters']
+            ),
+            p0=config['training'].get('teacher_forcing_max_prob', 1)
+        )
+
     def train(self):
         total_loss = 0
 
@@ -144,16 +175,22 @@ class Trainer():
             self.train_losses.append((self.iter, loss))
 
             if self.iter % self.print_every == 0:
-                info = 'iter: {:06d} - train loss: {:.3f} - lr: {:.2e} - load time: {:.2f} - gpu time: {:.2f}'.format(self.iter,
-                                                                                                                      total_loss /
-                                                                                                                      self.print_every, self.optimizer.param_groups[
-                                                                                                                          0]['lr'],
-                                                                                                                      total_loader_time, total_gpu_time)
+                # Status line
+                total_loss = total_loss / self.print_every
+                lr = self.optimizer.param_groups[0]['lr']
+
+                info = ''
+                info = info + f'iter: {self.iter:06d} - '
+                info = info + f'train loss: {total_loss:.3f} - '
+                info = info + f'lr: {lr:.2f} - '
+                info = info + f'tfr: {self.tfs.current_ratio():.3f} - '
+                info = info + f'load time: {total_loader_time:.2f} - '
+                info = info + f'gpu time: {total_gpu_time:.2f}'
 
                 total_loss = 0
                 total_loader_time = 0
                 total_gpu_time = 0
-                print(info)
+                self.print(info)
 
             if self.valid_annotation and self.iter % self.valid_every == 0:
                 metrics = self.validate()
@@ -172,7 +209,7 @@ class Trainer():
                     self.save_weights(self.export_weights_path)
                     best_acc = acc_full_seq
 
-    @torch.no_grad()
+    @ torch.no_grad()
     def validate(self):
         self.model.eval()
 
@@ -438,7 +475,11 @@ class Trainer():
             'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
 
         outputs = self.model(
-            img, tgt_input, tgt_key_padding_mask=tgt_padding_mask)
+            img,
+            tgt_output,
+            tgt_key_padding_mask=tgt_padding_mask,
+            teacher_forcing=self.tfs.step()
+        )
 
         # CE Loss requires (batch, class, ...)
         loss = self.criterion(outputs, tgt_output)
@@ -466,15 +507,15 @@ class Trainer():
         with open(self.export_logs_path, "a") as f:
             f.write(info.rstrip() + "\n")
 
-    @cached_property
+    @ cached_property
     def export_weights_path(self):
         return path.join(const.weight_dir, self.name + ".pth")
 
-    @cached_property
+    @ cached_property
     def export_checkpoints_path(self):
         return path.join(const.checkpoint_dir, self.name + ".pth")
 
-    @cached_property
+    @ cached_property
     def export_logs_path(self):
         return path.join(const.log_dir, self.name + ".log")
 

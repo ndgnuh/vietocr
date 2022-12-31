@@ -49,12 +49,13 @@ class CrossEntropyLoss(nn.Module):
         k.setdefault("ignore_index", vocab.pad_id)
         self.loss = nn.CrossEntropyLoss(*a, **k)
 
-    def forward(self, outputs, target):
-        # outputs: [batch, time, dim]
+    def forward(self, outputs, targets):
+        # outputs: [batch, time, num_class]
+        # targets: [num_class, batch]
 
-        # to: [dim, batch, time]
+        # to: [num_class, batch, time]
         outputs = outputs.transpose(-1, 1)
-        return self.loss(outputs, target)
+        return self.loss(outputs, targets)
 
 
 def get_loss_function(name, options, vocab):
