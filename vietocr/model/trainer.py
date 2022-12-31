@@ -102,10 +102,16 @@ class Trainer():
             ])
 
         self.train_gen = self.data_gen(
-            self.train_annotation, transform=transforms)
+            self.train_annotation,
+            transform=transforms,
+            curriculum=True
+        )
 
         if self.valid_annotation:
-            self.valid_gen = self.data_gen(self.valid_annotation)
+            self.valid_gen = self.data_gen(
+                self.valid_annotation,
+                curriculum=False
+            )
 
         self.train_losses = []
 
@@ -387,7 +393,7 @@ class Trainer():
 
         return batch
 
-    def data_gen(self, annotation_path, transform=None):
+    def data_gen(self, annotation_path, transform=None, curriculum=False):
         lmdb_path = path.join(
             const.lmdb_dir,
             utils.annotation_uuid(annotation_path)
@@ -402,7 +408,12 @@ class Trainer():
                              image_min_width=self.config['image_min_width'],
                              image_max_width=self.config['image_max_width'])
 
-        sampler = ClusterRandomSampler(dataset, self.batch_size, True)
+        sampler = ClusterRandomSampler(
+            dataset,
+            self.batch_size,
+            shuffle=True,
+            curriculum=curriculum
+        )
         collate_fn = Collator()
 
         gen = DataLoader(

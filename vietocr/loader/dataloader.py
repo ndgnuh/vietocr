@@ -121,17 +121,30 @@ class OCRDataset(Dataset):
 
 class ClusterRandomSampler(Sampler):
 
-    def __init__(self, data_source, batch_size, shuffle=True):
+    def __init__(self,
+                 data_source,
+                 batch_size: int,
+                 curriculum: bool = False,
+                 shuffle: bool = True):
         self.data_source = data_source
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.curriculum = curriculum
 
     def flatten_list(self, lst):
         return [item for sublist in lst for item in sublist]
 
     def __iter__(self):
         batch_lists = []
-        for cluster, cluster_indices in self.data_source.cluster_indices.items():
+        data = self.data_source.cluster_indices
+
+        # Keys are image width
+        keys = data.keys()
+        if self.curriculum:
+            keys = sorted(keys)
+
+        for cluster in keys:
+            cluster_indices = data[cluster]
             if self.shuffle:
                 random.shuffle(cluster_indices)
 
@@ -144,7 +157,9 @@ class ClusterRandomSampler(Sampler):
             batch_lists.append(batches)
 
         lst = self.flatten_list(batch_lists)
-        if self.shuffle:
+
+        # Don't shuffle if curriculum learning
+        if self.shuffle and not self.curriculum:
             random.shuffle(lst)
 
         lst = self.flatten_list(lst)
