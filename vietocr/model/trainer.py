@@ -87,7 +87,12 @@ class Trainer():
 
         if 'weights' in config:
             weights = self.load_weights(config['weights'])
-            self.model.load_state_dict(weights, strict=False)
+            errors = self.model.load_state_dict(weights, strict=False)
+            errors = '\n'.join([
+                f'\t{k}' for k in
+                (errors.missing_keys + errors.unexpected_keys)
+            ])
+            self.print(f"Mismatch keys:\n{errors}")
 
         # if config.get('pretrained', None) is not None:
         #     weight_file = download_weights(
