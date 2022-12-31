@@ -13,6 +13,7 @@ class CTCLoss(nn.Module):
     def __init__(self, vocab, *a, **k):
         super().__init__()
         k.setdefault("blank", vocab.blank_id)
+        k.setdefault("zero_infinity", True)
         self.ctc = nn.CTCLoss(*a, **k)
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
