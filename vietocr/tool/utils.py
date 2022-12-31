@@ -4,6 +4,42 @@ import yaml
 import numpy as np
 import uuid
 import requests
+import inspect
+from functools import wraps
+
+
+def row_format(**kw):  # :, hborder="-", vborder="|", joint="+"):
+    kw.setdefault('hborder', '-')
+    kw.setdefault('vborder', ' | ')
+    kw.setdefault('joint', '-+-')
+
+    hborder = kw.pop("hborder")
+    vborder = kw.pop("vborder")
+    joint = kw.pop("joint")
+
+    n = max(max(len(str(k)), len(str(v))) for k, v in kw.items())
+    row_fmt = ["{" + k + ":<" + str(n) + "}" for k in kw.keys()]
+    row_fmt = vborder.join(row_fmt)
+
+    sep_fmt = [hborder * n for k in kw.keys()]
+    sep_fmt = joint.join(sep_fmt)
+
+    rows = (
+        row_fmt.format_map({k: k for k in kw}),
+        sep_fmt,
+        row_fmt.format_map(kw)
+    )
+    return '\n'.join(rows)
+
+
+def save(init_method):
+    @wraps(init_method)
+    def wrap_init(self, *arg, **kwargs):
+        allkwargs = inspect.getcallargs(init_method, self, *arg, **kwargs)
+        init_method(self, *arg, **kwargs)
+        for k, v in allkwargs.items():
+            setattr(self, k, v)
+    return wrap_init
 
 
 def get_device(device=None):

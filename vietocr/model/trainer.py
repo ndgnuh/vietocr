@@ -179,13 +179,16 @@ class Trainer():
                 total_loss = total_loss / self.print_every
                 lr = self.optimizer.param_groups[0]['lr']
 
-                info = ''
-                info = info + f'iter: {self.iter:06d} - '
-                info = info + f'train loss: {total_loss:.3f} - '
-                info = info + f'lr: {lr:.2f} - '
-                info = info + f'tfr: {self.tfs.current_ratio():.3f} - '
-                info = info + f'load time: {total_loader_time:.2f} - '
-                info = info + f'gpu time: {total_gpu_time:.2f}'
+                info = {
+                    "iter": f'{self.iter: 06d}',
+                    "train loss": f'{self.iter: 06d}',
+                    "train loss": f'{total_loss:.3f}',
+                    "lr": f'{lr:.2f}',
+                    "tfr": f'{self.tfs.current_ratio():.3f}',
+                    "load time": f'{total_loader_time:.2f}',
+                    "gpu time": f'{total_gpu_time:.2f}',
+                }
+                info = ' - '.join(f'{k}: {v}' for k, v in info.items())
 
                 total_loss = 0
                 total_loader_time = 0
