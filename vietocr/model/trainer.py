@@ -1,3 +1,4 @@
+from torchvision import transforms as T
 from vietocr.optim.optim import ScheduledOptim
 from vietocr.optim.labelsmoothingloss import LabelSmoothingLoss
 from torch.optim import Adam, SGD, AdamW
@@ -7,7 +8,8 @@ from vietocr.tool.translate import translate, batch_translate_beam_search
 from vietocr.tool.utils import download_weights
 from ..tool import utils
 from vietocr.tool.logger import Logger
-from vietocr.loader.aug import ImgAugTransform
+from .stn import SpatialTransformer
+from ..loader import aug
 
 import yaml
 import torch
@@ -63,7 +65,7 @@ class CTCLoss(nn.Module):
 
 
 class Trainer():
-    def __init__(self, config, augmentor=ImgAugTransform()):
+    def __init__(self, config):
 
         self.config = config
 
@@ -82,6 +84,11 @@ class Trainer():
         self.name = config['name']
 
         self.model, self.vocab = build_model(config)
+        self.support = DomAvs(
+            cnn=self.model.cnn,
+            aug=aug.default_augment
+        )
+        self.support.to(self.device)
 
         if 'weights' in config:
             weights = self.load_weights(config['weights'])
@@ -118,7 +125,10 @@ class Trainer():
 
         transforms = None
         if self.image_aug:
-            transforms = augmentor
+            transforms = aug.T.Compose([
+                aug.default_augment,
+                aug.T.ToPILImage()
+            ])
 
         self.train_gen = self.data_gen(
             self.train_annotation, transform=transforms)
@@ -441,6 +451,7 @@ class Trainer():
         self.model.train()
 
         batch = self.batch_to_device(batch)
+        self.optimizer.zero_grad()
         img, tgt_input, tgt_output, tgt_padding_mask = batch['img'], batch[
             'tgt_input'], batch['tgt_output'], batch['tgt_padding_mask']
 
@@ -450,9 +461,13 @@ class Trainer():
         # CE Loss requires (batch, class, ...)
         loss = self.criterion(outputs.transpose(-1, 1), tgt_output)
 
-        self.optimizer.zero_grad()
+        # Extra supervision
+        sp_loss = self.support(img)
 
-        loss.backward()
+        # Total
+        total_loss = loss + sp_loss
+        # total_loss = loss
+        total_loss.backward()
 
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1)
 
@@ -480,3 +495,48 @@ class Trainer():
     @cached_property
     def export_logs_path(self):
         return path.join(const.log_dir, self.name + ".log")
+
+
+class DomAvs(nn.Module):
+    def __init__(self, cnn, aug):
+        super().__init__()
+        self.cnn = cnn
+        # TODO: better augmentation
+        with torch.no_grad():
+            device = next(cnn.parameters()).device
+            x = torch.rand(1, 3, 112, 112, device=device)
+            x = self.cnn(x)
+            hidden_size = x.shape[-1]
+
+        # Generator
+        self.stn = SpatialTransformer(3)
+        self.g_net = aug
+        self.g_loss = nn.SmoothL1Loss()
+
+        # Discriminator
+        self.d_net = nn.Linear(hidden_size, 2)
+        self.d_loss = nn.CrossEntropyLoss()
+
+    def forward(self, image):
+        batch_size = image.shape[0]
+
+        # Generate loss
+        gen = self.g_net(image)
+        while (image == gen).all():
+            gen = self.g_net(image)
+        gen = self.cnn(gen)
+        image = self.cnn(image)
+        g_loss = self.g_loss(gen, image)
+
+        # Discriminate loss
+        # d_input = torch.cat([gen, image], dim=1)
+        # d_input = d_input.mean(dim=0)
+        # d_output = self.d_net(d_input)
+        # d_label = torch.tensor(
+        #     [0] * batch_size + [1] * batch_size,
+        #     device=d_output.device)
+        # d_loss = self.d_loss(d_output, d_label)
+
+        # Total loss
+        loss = g_loss
+        return loss
