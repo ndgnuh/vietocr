@@ -10,6 +10,7 @@ from ..tool import utils
 from vietocr.tool.logger import Logger
 from .stn import SpatialTransformer
 from ..loader import aug
+from . import losses
 
 import yaml
 import torch
@@ -36,32 +37,6 @@ from .. import const
 
 tqdm = partial(std_tqdm, dynamic_ncols=True)
 print = std_tqdm.write
-
-
-class CTCLoss(nn.Module):
-    def __init__(self, *a, **k):
-        super().__init__()
-        self.ctc = nn.CTCLoss(*a, **k)
-        self.log_softmax = nn.LogSoftmax(dim=-1)
-
-    def forward(self, outputs, targets):
-        # outputs: [time, batch, class]
-        # targets: [batch, max_length]
-        logits = self.log_softmax(outputs)
-
-        # target_lengths: [batch]
-        target_lengths = torch.count_nonzero(targets != self.ctc.blank, dim=1)
-
-        # input_lengths: [batch]
-        # use time * batch for now
-        input_lengths = torch.tensor(
-            [logits.shape[0]] * logits.shape[1],
-            device=logits.device
-        )
-
-        # ctc loss
-        loss = self.ctc(logits, targets, input_lengths, target_lengths)
-        return loss
 
 
 class Trainer():
@@ -110,17 +85,13 @@ class Trainer():
             max_lr=config['training']['max_lr'],
             pct_start=config['training']['pct_start'],
         )
-#        self.optimizer = ScheduledOptim(
-#            Adam(self.model.parameters(), betas=(0.9, 0.98), eps=1e-09),
-#            #config['transformer']['d_model'],
-#            512,
-#            **config['optimizer'])
 
-        self.criterion = nn.CrossEntropyLoss(
-            ignore_index=self.vocab.pad_id,
-            label_smoothing=0.1
+        self.criterion = losses.get_loss_function(
+            config['training'].get('loss', 'CrossEntropyLoss'),
+            config['training'].get('loss_options', dict()),
+            self.vocab
         )
-        # self.criterion = LabelSmoothingLoss(
+
         #     len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
 
         transforms = None
@@ -229,7 +200,7 @@ class Trainer():
 
             # Validation loss
             # CE Loss requires (batch, class, ...)
-            loss = self.criterion(outputs.transpose(-1, 1), tgt_output).item()
+            loss = self.criterion(outputs, tgt_output).item()
 
             # Validation accuracy
             pr_sents = self.vocab.batch_decode(translated.tolist())
@@ -459,7 +430,7 @@ class Trainer():
             img, tgt_input, tgt_key_padding_mask=tgt_padding_mask)
 
         # CE Loss requires (batch, class, ...)
-        loss = self.criterion(outputs.transpose(-1, 1), tgt_output)
+        loss = self.criterion(outputs, tgt_output)
 
         # Extra supervision
         sp_loss = self.support(img)
