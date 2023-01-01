@@ -187,11 +187,11 @@ class Trainer():
                 info = {
                     "iter": f'{self.iter: 06d}',
                     "train loss": f'{self.iter: 06d}',
-                    "train loss": f'{total_loss:.3f}',
-                    "lr": f'{lr:.2f}',
-                    "tfr": f'{self.tfs.current_ratio():.3f}',
-                    "load time": f'{total_loader_time:.2f}',
-                    "gpu time": f'{total_gpu_time:.2f}',
+                    "train loss": f'{total_loss:.4f}',
+                    "lr": f'{lr:.3e}',
+                    "tfr": f'{self.tfs.current_ratio():.3e}',
+                    "load time": f'{total_loader_time:.4e}',
+                    "gpu time": f'{total_gpu_time:.4e}',
                 }
                 info = ' - '.join(f'{k}: {v}' for k, v in info.items())
 
