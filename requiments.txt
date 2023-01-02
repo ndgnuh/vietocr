@@ -2,10 +2,9 @@ pyyaml
 torch
 torchvision 
 gdown
-numpy==1.23.1
+numpy
 six
 requests
-imgaug
 lmdb
 opencv-python
 matplotlib
