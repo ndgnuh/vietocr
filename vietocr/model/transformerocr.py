@@ -25,10 +25,21 @@ class VietOCR(nn.Module):
             self.transformer = Seq2Seq(vocab_size, **transformer_args)
         elif seq_modeling == 'convseq2seq':
             self.transformer = ConvSeq2Seq(vocab_size, **transformer_args)
+        elif seq_modeling == 'none' or seq_modeling is None:
+            self.transformer = nn.MultiheadAttention(
+                transformer_args['head_size'],
+                16,
+            )
         else:
             raise('Not Support Seq Model')
 
-    def forward(self, img, tgt_input=None, tgt_key_padding_mask=None, teacher_forcing=False):
+    def forward(
+        self,
+        img,
+        tgt_input=None,
+        tgt_key_padding_mask=None,
+        teacher_forcing=False
+    ):
         """
         Shape:
             - img: (N, C, H, W)
@@ -38,6 +49,8 @@ class VietOCR(nn.Module):
         """
         if hasattr(self, "stn"):
             img = self.stn(img)
+
+        # src: [time, batch, hidden]
         src = self.cnn(img)
 
         if self.seq_modeling == 'transformer':
@@ -51,4 +64,8 @@ class VietOCR(nn.Module):
             )
         elif self.seq_modeling == 'convseq2seq':
             outputs = self.transformer(src, tgt_input)
+        elif self.seq_modeling == 'none' or self.seq_modeling is None:
+            outputs, _ = self.transformer(src, src, src, need_weights=False)
+            # convert to [batch, time, hidden]
+            outputs = outputs.transpose(0, 1)
         return outputs

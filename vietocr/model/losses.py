@@ -5,6 +5,7 @@
 # - provide uniform interface for the trainer
 
 from torch import nn
+import torch
 
 
 class CTCLoss(nn.Module):

@@ -189,7 +189,8 @@ class VocabCTC(Vocab):
 
     def encode(self, chars, max_length=None):
         # chars = unidecode_string(chars, self.chars)
-        ids = []
+        # Because the output is shifted right by 1
+        ids = [self.blank_id]
         prev = None
         for c in chars:
             if prev == c:

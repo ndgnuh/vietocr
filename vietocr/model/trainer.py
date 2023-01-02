@@ -111,13 +111,17 @@ class Trainer():
             pct_start=config['training']['pct_start'],
         )
 
-        self.criterion = losses.get_loss_function(
-            config['training'].get('loss', 'CrossEntropyLoss'),
-            config['training'].get('loss_options', dict()),
-            self.vocab
-        )
-
-        #     len(self.vocab), padding_idx=self.vocab.pad, smoothing=0.1)
+        self.model_type = config['type']
+        if config['type'] == 'ctc':
+            self.criterion = losses.CTCLoss(
+                vocab=self.vocab,
+                **config['training'].get('loss_options', {})
+            )
+        elif config['type'] == 'seq2seq':
+            self.criterion = losses.CrossEntropyLoss(
+                vocab=self.vocab,
+                **config['training'].get('loss_options', {})
+            )
 
         transforms = None
         if self.image_aug:
