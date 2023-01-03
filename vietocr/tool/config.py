@@ -6,6 +6,7 @@ thisdir = path.dirname(__file__)
 
 url_config = {
     'inception_v3_seq2seq': 'inception_v3_s2s.yml',
+    'inception_v3_seq2seq_large': 'inception_v3_s2s_large.yml',
     'mobilenet_v3l_seq2seq': 'mv3l_s2s.yml',
     'resnet50_seq2seq': 'resnet50_s2s.yml',
     'vgg_transformer': 'vgg-transformer.yml',
