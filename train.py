@@ -24,7 +24,8 @@ def read_yaml(fpath: str):
 def train(config, args):
     # Keep the script fast for other purpose
     from vietocr.model.trainer import Trainer
-
+    if args.name is not None:
+        config['name'] = args.name
     trainer = Trainer(config)
     trainer.train()
 
@@ -84,6 +85,11 @@ def main():
         '--experiment',
         dest="training",
         required=True)
+    train_parser.add_argument(
+        '--name',
+        dest="name",
+        help="Custom experiment name",
+        required=False)
 
     # Export
     export_parser = sp.add_parser('export')
