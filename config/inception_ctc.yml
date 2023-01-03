@@ -1,0 +1,21 @@
+# change to list chars of your dataset or use default vietnamese chars
+type: ctc
+device: cuda
+
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+
+backbone: inception
+cnn:
+  dropout: 0.1
+  output_size: 256
+
+seq_modeling: none
+transformer:
+  head_size: 256
+  num_attention_heads: 16
+  num_layers: 5
+
+image_height: 32
+image_min_width: 64
+image_max_width: 512
+
