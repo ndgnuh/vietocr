@@ -59,9 +59,14 @@ class OCRDataset(Dataset):
                     desc='{} build cluster'.format(self.lmdb_path),
                     ncols=100, position=0, leave=True)
 
+        error = 0
         for i in pbar:
             bucket = self.get_bucket(i)
+            if bucket is None:
+                error += 1
+                continue
             self.cluster_indices[bucket].append(i)
+        print(f"Skipped {error} oversize images")
 
     def get_bucket(self, idx):
         key = 'dim-%09d' % idx
@@ -72,6 +77,8 @@ class OCRDataset(Dataset):
 
         new_w, image_height = resize(
             imgW, imgH, self.image_height, self.image_min_width, self.image_max_width)
+        if new_w > self.image_max_width:
+            return None
 
         return new_w
 

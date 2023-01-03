@@ -1,6 +1,7 @@
 from torch import nn, Tensor
 from torch.nn import functional as F
 from torchvision.ops import Conv2dNormActivation
+from torchvision.transforms import functional as TF
 from einops.layers.torch import Rearrange, Reduce
 from typing import Tuple, List, Optional
 import torch
@@ -89,10 +90,11 @@ class SVTREmbedding(nn.Module):
         self.to_img = Rearrange("b (h w) c -> b c h w", h=h, w=w)
 
     def forward(self, image):
-        h, w = self.image_size
-        oh, ow = image.shape[-2:]
-        image = image[..., :h, :w]
-        image = F.pad(image, (0, w-ow, 0, h-oh))
+        # h, w = self.image_size
+        image = TF.resize(image, self.image_size)
+        # oh, ow = image.shape[-2:]
+        # image = image[..., :h, :w]
+        # image = F.pad(image, (0, w-ow, 0, h-oh))
         patch_embedding = self.patch_embedding(image)
         positional_embedding = self.positional_embedding()
         patch_embedding = self.to_seq(patch_embedding)
