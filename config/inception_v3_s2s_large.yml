@@ -2,7 +2,7 @@
 vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 type: s2s
 
-weights: https://github.com/ndgnuh/vietocr/releases/download/weights/inception_s2s.pth
+weights: https://github.com/ndgnuh/vietocr/releases/download/weights/inception_s2s_large.pth
 
 backbone: inception
 cnn:
@@ -18,6 +18,6 @@ transformer:
     dropout: 0.1
     sos_token_id: 1
 
-image_height: 32
-image_min_width: 64
-image_max_width: 512
+image_height: 48
+image_min_width: 96
+image_max_width: 768
