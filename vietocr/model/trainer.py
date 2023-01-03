@@ -117,11 +117,13 @@ class Trainer():
                 vocab=self.vocab,
                 **config['training'].get('loss_options', {})
             )
-        elif config['type'] == 'seq2seq':
+        elif config['type'] == 'seq2seq' or config['type'] == 's2s':
             self.criterion = losses.CrossEntropyLoss(
                 vocab=self.vocab,
                 **config['training'].get('loss_options', {})
             )
+        else:
+            assert ValueError(f"Unsupported  model type: {config['type']}")
 
         transforms = None
         if self.image_aug:
