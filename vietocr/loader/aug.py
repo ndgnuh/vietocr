@@ -6,6 +6,7 @@ from torch import distributions
 import torch
 import random
 
+from torch.nn import functional as F
 from dataclasses import dataclass
 from typing import Callable
 from itertools import product
@@ -15,6 +16,15 @@ from torch import nn
 class MotionBlur(nn.Module):
     def __init__(self, kernel_size: int, direction: str, reflect=False):
         super().__init__()
+        self.kernel_size = kernel_size
+        self.direction = direction
+        self.reflect = reflect
+        self.padding = kernel_size // 2
+
+    def mk_kernel(self):
+        kernel_size = self.kernel_size
+        direction = self.direction
+        reflect = self.reflect
         kernel = torch.zeros((kernel_size, kernel_size))
         center = kernel_size // 2
         value = 1 / kernel_size
@@ -31,21 +41,18 @@ class MotionBlur(nn.Module):
         if reflect and direction == "d":
             kernel = torch.flipud(torch.fliplr(kernel))
 
-        self.conv = nn.Conv2d(
-            3, 3, kernel_size, padding=kernel_size // 2, bias=False, groups=3)
-        self.conv.weight.data, _ = torch.broadcast_tensors(
-            kernel,
-            self.conv.weight.data
-        )
-
-        # Don't train it
-        for p in self.conv.parameters():
-            p.require_grad = False
+        return kernel
 
     @torch.no_grad()
     def forward(self, image):
-        self.to(image.device)
-        image = self.conv(image)
+        n_channels = image.shape[-3]
+
+        kernel = self.mk_kernel()
+        kernel = torch.stack([kernel.unsqueeze(0)] * n_channels)
+        kernel = kernel.to(image.device)
+
+        image = F.conv2d(image, kernel, groups=n_channels,
+                         padding=self.padding)
         return image
 
 
