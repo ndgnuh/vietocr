@@ -159,9 +159,9 @@ def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
 
 def load_weights(path):
     if path.startswith('http'):
-        weights = torch.load(utils.download_weights(path))
+        weights = torch.load(utils.download_weights(path), map_location="cpu")
     else:
-        weights = torch.load(path)
+        weights = torch.load(path, map_location="cpu")
     return weights
 
 
