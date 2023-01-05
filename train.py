@@ -126,7 +126,7 @@ def main():
     # Dispatch
     action = args.action
     if action == "train":
-        config['training'] = args.training
+        config['training'] = read_yaml(args.training)
         train(config, args)
     elif action == "test":
         from vietocr.scripts import test
