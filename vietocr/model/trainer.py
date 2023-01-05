@@ -85,20 +85,6 @@ class Trainer():
         )
         self.support.to(self.device)
 
-        if 'weights' in config:
-            weights = self.load_weights(config['weights'])
-            errors = self.model.load_state_dict(weights, strict=False)
-            errors = '\n'.join([
-                f'\t{k}' for k in
-                (errors.missing_keys + errors.unexpected_keys)
-            ])
-            self.print(f"Mismatch keys:\n{errors}")
-
-        # if config.get('pretrained', None) is not None:
-        #     weight_file = download_weights(
-        #         **config['pretrain'], quiet=config['quiet'])
-        #     self.load_weights(weight_file)
-
         self.iter = 0
 
         self.optimizer = AdamW(self.model.parameters(),
@@ -401,27 +387,6 @@ class Trainer():
         os.makedirs(path, exist_ok=True)
 
         torch.save(state, filename)
-
-    def load_weights(self, path):
-        if path.startswith('http'):
-            weights = torch.load(download_weights(path))
-        else:
-            weights = torch.load(path)
-        return weights
-
-    # def load_weights(self, filename):
-    #     state_dict = torch.load(
-    #         filename, map_location=torch.device(self.device))
-
-    #     for name, param in self.model.named_parameters():
-    #         if name not in state_dict:
-    #             print('{} not found'.format(name))
-    #         elif state_dict[name].shape != param.shape:
-    #             print('{} missmatching shape, required {} but found {}'.format(
-    #                 name, param.shape, state_dict[name].shape))
-    #             del state_dict[name]
-
-    #     self.model.load_state_dict(state_dict, strict=False)
 
     def save_weights(self, filename):
         dirname = path.dirname(filename)

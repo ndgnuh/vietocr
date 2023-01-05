@@ -157,6 +157,14 @@ def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     return translated_sentence, char_probs
 
 
+def load_weights(path):
+    if path.startswith('http'):
+        weights = torch.load(utils.download_weights(path))
+    else:
+        weights = torch.load(path)
+    return weights
+
+
 def build_model(config):
     if config['type'] == 's2s':
         vocab = VocabS2S(config['vocab'])
@@ -170,6 +178,15 @@ def build_model(config):
                     config['transformer'],
                     config['seq_modeling'],
                     stn=config.get('stn', 0))
+    if 'weights' in config:
+        weights = load_weights(config['weights'])
+        errors = model.load_state_dict(weights, strict=False)
+        errors = '\n'.join([
+            f'\t{k}' for k in
+            (errors.missing_keys + errors.unexpected_keys)
+        ])
+        print(f"Mismatch keys:\n{errors}")
+
     model = model.to(device)
 
     return model, vocab

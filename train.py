@@ -3,9 +3,7 @@ import yaml
 import json
 from icecream import install
 
-from os import path
 from pprint import pprint
-from vietocr.tool.dict_utils import merge_dict
 from vietocr.tool.config import get_config
 
 install()
@@ -28,6 +26,11 @@ def train(config, args):
         config['name'] = args.name
     trainer = Trainer(config)
     trainer.train()
+
+
+def run_test(config):
+    from vietocr.tool.translate import build_model
+    model, vocab = build_model(config)
 
 
 def export(config, weight_path, output):
@@ -91,6 +94,22 @@ def main():
         help="Custom experiment name",
         required=False)
 
+    # Testing
+    test_parser = sp.add_parser("test")
+    test_parser.add_argument(
+        "--test-annotation",
+        "-i",
+        dest="test_annotation",
+        required=True
+    )
+    test_parser.add_argument(
+        "--batch_size",
+        "-b",
+        dest="batch_size",
+        default=4,
+        type=int,
+    )
+
     # Export
     export_parser = sp.add_parser('export')
     export_parser.add_argument('-w', '--weight',
@@ -103,12 +122,15 @@ def main():
     args = parser.parse_args()
     print(args)
     config = get_config(args.config)
-    config['training'] = get_config(args.training)
 
     # Dispatch
     action = args.action
     if action == "train":
+        config['training'] = args.training
         train(config, args)
+    elif action == "test":
+        from vietocr.scripts import test
+        test.main(config, args)
     elif action == "export":
         export(config, args.weight, "test.onnx")
     elif action == "dump":
