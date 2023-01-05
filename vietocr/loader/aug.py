@@ -8,6 +8,51 @@ import random
 
 from dataclasses import dataclass
 from typing import Callable
+from itertools import product
+from torch import nn
+
+
+class MotionBlur(nn.Module):
+    def __init__(self, kernel_size: int, direction: str, reflect=False):
+        super().__init__()
+        kernel = torch.zeros((kernel_size, kernel_size))
+        center = kernel_size // 2
+        value = 1 / kernel_size
+        if direction == "v":
+            kernel[:, kernel_size // 2] = value
+        elif direction == "h":
+            kernel[kernel_size // 2, :] = value
+        elif direction == "d":
+            kernel[kernel_size // 2, :center] = value
+            kernel[:center + 1, kernel_size // 2] = value
+        else:
+            raise ValueError(
+                "Unsupported direction in MotionBlur, supported directions are v,h,d")
+        if reflect and direction == "d":
+            kernel = torch.flipud(torch.fliplr(kernel))
+
+        self.conv = nn.Conv2d(
+            3, 3, kernel_size, padding=kernel_size // 2, bias=False, groups=3)
+        self.conv.weight.data, _ = torch.broadcast_tensors(
+            kernel,
+            self.conv.weight.data
+        )
+
+        # Don't train it
+        for p in self.conv.parameters():
+            p.require_grad = False
+
+    @torch.no_grad()
+    def forward(self, image):
+        image = self.conv(image)
+        return image
+
+
+def RandomMotionBlur(sizes, directions=("h", "v")):
+    return T.RandomChoice([
+        MotionBlur(size, direction)
+        for size, direction in product(sizes, directions)
+    ])
 
 
 def ensure_tensor(img):
@@ -70,25 +115,34 @@ class Sometime:
 
 chance = 0.3
 default_augment = T.RandomApply([
-    Sometime(T.Grayscale(3)),
-    Sometime(T.GaussianBlur(5)),
-    Sometime(T.RandomInvert(1)),
-    Sometime(T.RandomSolarize(1)),
-    T.RandomApply([
-        Sometime(PatchNoise(3)),
-        Sometime(PatchNoise(5)),
-        Sometime(PatchNoise(7)),
-        Sometime(PatchNoise(11)),
-        Sometime(PatchNoise(17)),
+    T.RandomChoice([
+        T.GaussianBlur(3),
+        T.GaussianBlur(5),
+        T.GaussianBlur(7),
+        T.GaussianBlur(11),
+        T.GaussianBlur(13),
+        RandomMotionBlur([3, 5, 7, 9, 11, 13, 17], ["d", "v", "h"])
     ]),
-    Sometime(T.RandomPerspective(0.01)),
-    Sometime(T.RandomAffine(
-        degrees=(-3, 3),
-        translate=(0, 0.1)
-    ))
-
-
-], p=1)
+    T.RandomChoice([
+        T.Grayscale(3),
+        T.RandomInvert(1),
+        T.RandomSolarize(1),
+    ]),
+    T.RandomChoice([
+        PatchNoise(3),
+        PatchNoise(5),
+        PatchNoise(7),
+        PatchNoise(11),
+        PatchNoise(17),
+    ]),
+    T.RandomPerspective(0.01),
+    T.RandomAffine(
+        degrees=(-5, 5),
+        translate=(0.1, 0.1),
+        scale=(0.8, 1.2),
+        shear=(-7, 7),
+    )
+])
 default_augment = T.Compose([
     ensure_tensor,
     default_augment,
