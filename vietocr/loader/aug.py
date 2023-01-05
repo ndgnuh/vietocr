@@ -44,6 +44,7 @@ class MotionBlur(nn.Module):
 
     @torch.no_grad()
     def forward(self, image):
+        self.to(image.device)
         image = self.conv(image)
         return image
 
