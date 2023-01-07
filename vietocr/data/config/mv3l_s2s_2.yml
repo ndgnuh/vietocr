@@ -1,0 +1,37 @@
+# change to list chars of your dataset or use default vietnamese chars
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+
+weights: storage/weights/inception_s2s.pth
+backbone: mobilenet_v3_large
+cnn:
+  dropout: 0.1
+  output_size: 256
+
+seq_modeling: seq2seq
+transformer:
+    encoder_hidden: 256
+    decoder_hidden: 256
+    img_channel: 256
+    decoder_embedded: 256
+    dropout: 0.1
+    sos_token_id: 1
+
+optimizer:
+    max_lr: 0.001
+    pct_start: 0.1
+
+trainer:
+    batch_size: 16
+    print_every: 500
+    valid_every: 4000
+    iters: 1_000_000
+    # where to save our model for prediction
+    export: ./weights/mv3l_s2s_cur.pth
+    checkpoint: ./checkpoint/mv3l_s2s_cur.pth
+    log: ./train_mv3l_s2s.log
+    # null to disable compuate accuracy, or change to number of sample to enable validiation while training
+    metrics: null
+
+image_height: 32
+image_min_width: 64
+image_max_width: 512

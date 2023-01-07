@@ -3,6 +3,13 @@ from os import path
 from vietocr.tool.utils import download_config
 
 thisdir = path.dirname(__file__)
+configdir = path.join(thisdir, "..", "data", "config")
+# for i in range(5):
+#     configdir = path.join(configdir, "..")
+#     if "config" in os.listdir(configdir):
+#         configdir = path.join(configdir, "config")
+#         break
+
 
 url_config = {
     'inception_v3_seq2seq': 'inception_v3_s2s.yml',
@@ -32,7 +39,7 @@ def read_yaml(fpath: str):
 def get_config(name_or_path: str):
     if name_or_path in url_config:
         config_path = url_config[name_or_path]
-        config_path = path.join(thisdir, "..", "..", "config", config_path)
+        config_path = path.join(config_path, config_path)
     else:
         config_path = name_or_path
 

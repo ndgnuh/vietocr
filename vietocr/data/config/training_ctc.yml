@@ -1,0 +1,36 @@
+# Optimizer
+max_lr: 0.0003
+pct_start: 0.1
+
+# Trainer
+print_every: 200
+valid_every: 2500
+# valid_every: 200
+iters: 500_000
+
+# Loss function
+loss_options: {}
+
+# Dataset
+train_annotation: /home/hung/Data/vietocr-ocr-dataset/train.txt
+valid_annotation: /home/hung/Data/vietocr-ocr-dataset/val.txt
+# train_annotation: data/handwriting-address/train.txt
+# valid_annotation: data/handwriting-address/val.txt
+# train_annotation: data/multi_digit_number_32/train.txt
+# valid_annotation: data/multi_digit_number_32/val.txt
+# train_annotation: data/random-textbox-vi-1k/train.txt
+# valid_annotation: data/random-textbox-vi-1k/val.txt
+
+# Data loader
+dl_batch_size: 24
+dl_num_workers: 6
+dl_pin_memory: False
+
+# Augmentation
+augment: true
+
+# Teacher forcing control
+teacher_forcing_start: 0
+teacher_forcing_end: 250_000
+teacher_forcing_max_prob: 1
+
