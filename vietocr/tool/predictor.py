@@ -13,10 +13,15 @@ class Predictor:
         self.image_min_width = config['image_min_width']
         self.image_max_width = config['image_max_width']
 
+    @torch.no_grad()
     def __call__(self, image):
         image = process_image(image,
                               self.image_height,
                               self.image_min_width,
                               self.image_max_width)
-        output = self.model(torch.tensor(image.astype('float32')).unsqueeze(0))
+        device = next(self.model.parameters()).device
+        image = torch.tensor(image.astype('float32')).unsqueeze(0)
+        image = image.to(device)
+        output = self.model(image)
+        output = output.cpu().detach()
         return self.vocab.batch_decode(output.argmax(dim=-1).tolist())
