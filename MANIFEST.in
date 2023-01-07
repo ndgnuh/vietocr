@@ -1,2 +1,2 @@
-vietocr/tests/image/*
-config/*
+include vietocr/tests/image/*
+include config/*
