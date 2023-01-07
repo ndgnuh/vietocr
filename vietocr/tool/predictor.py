@@ -14,14 +14,18 @@ class Predictor:
         self.image_max_width = config['image_max_width']
 
     @torch.no_grad()
-    def __call__(self, image):
-        image = process_image(image,
-                              self.image_height,
-                              self.image_min_width,
-                              self.image_max_width)
+    def __call__(self, images):
         device = next(self.model.parameters()).device
-        image = torch.tensor(image.astype('float32')).unsqueeze(0)
-        image = image.to(device)
-        output = self.model(image)
+        if not isinstance(images, (tuple, list)):
+            images = [images]
+        images = [process_image(image,
+                                self.image_height,
+                                self.image_min_width,
+                                self.image_max_width)
+                  for image in images]
+        images = [torch.tensor(image.astype('float32')) for image in images]
+        images = torch.stack(images, dim=0)
+        images = images.to(device)
+        output = self.model(images)
         output = output.cpu().detach()
         return self.vocab.batch_decode(output.argmax(dim=-1).tolist())
