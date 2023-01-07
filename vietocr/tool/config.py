@@ -2,13 +2,9 @@ import yaml
 from os import path
 from vietocr.tool.utils import download_config
 
-thisdir = path.dirname(__file__)
-configdir = path.join(thisdir, "..", "data", "config")
-# for i in range(5):
-#     configdir = path.join(configdir, "..")
-#     if "config" in os.listdir(configdir):
-#         configdir = path.join(configdir, "config")
-#         break
+config_dir = path.dirname(__file__)
+config_dir = path.join(config_dir, "..", "data", "config")
+config_dir = path.normpath(config_dir)
 
 
 url_config = {
@@ -39,7 +35,7 @@ def read_yaml(fpath: str):
 def get_config(name_or_path: str):
     if name_or_path in url_config:
         config_path = url_config[name_or_path]
-        config_path = path.join(config_path, config_path)
+        config_path = path.join(config_dir, config_path)
     else:
         config_path = name_or_path
 
