@@ -1,2 +1,2 @@
-include vietocr/tests/image/*
-include config/*
+recursive-include config *
+recursive-include vietocr/tests/image *
