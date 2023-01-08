@@ -1,3 +1,0 @@
-aug:
-    image_aug: true
-    masked_language_model: true
