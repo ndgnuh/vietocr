@@ -235,15 +235,17 @@ class Collator(object):
 
         tgt_padding_mask = np.array(target_weights) == 0
 
-        rs = {
-            'img': torch.FloatTensor(img),
-            'tgt_input': torch.LongTensor(tgt_input),
-            'tgt_output': torch.LongTensor(tgt_output),
-            'tgt_padding_mask': torch.BoolTensor(tgt_padding_mask),
-            'filenames': filenames
-        }
+        image = torch.FloatTensor(img)
+        target = torch.LongTensor(tgt_output)
+        # rs = {
+        #     'img': image,
+        #     'tgt_input': torch.LongTensor(tgt_input),
+        #     'tgt_output': target,
+        #     'tgt_padding_mask': torch.BoolTensor(tgt_padding_mask),
+        #     'filenames': filenames
+        # }
 
-        return rs
+        return image, target
 
 
 def get_lbdm_path(annotation_path: str):
