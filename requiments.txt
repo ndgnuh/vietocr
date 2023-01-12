@@ -6,9 +6,10 @@ numpy
 six
 requests
 lmdb
-opencv-python
+opencv-python-headless
 matplotlib
 prefetch_generator
 einops
 unidecode
 icecream
+albumentations
