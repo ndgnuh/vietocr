@@ -1,4 +1,5 @@
 from torchvision import transforms as T
+from torchvision.transforms import functional as TF
 from vietocr.optim.optim import ScheduledOptim
 from vietocr.optim.labelsmoothingloss import LabelSmoothingLoss
 from torch.optim import Adam, SGD, AdamW
@@ -79,11 +80,11 @@ class Trainer():
         self.name = config['name']
 
         self.model, self.vocab = build_model(config)
-        self.support = DomAvs(
-            cnn=self.model.cnn,
-            aug=aug.default_augment
-        )
-        self.support.to(self.device)
+        # self.support = DomAvs(
+        #     cnn=self.model.cnn,
+        #     aug=aug.default_augment
+        # )
+        # self.support.to(self.device)
 
         self.iter = 0
 
@@ -113,10 +114,7 @@ class Trainer():
 
         transforms = None
         if self.image_aug:
-            transforms = aug.T.Compose([
-                aug.default_augment,
-                aug.T.ToPILImage()
-            ])
+            transforms = aug.default_augment
 
         self.train_gen = self.data_gen(
             self.train_annotation,
@@ -464,10 +462,10 @@ class Trainer():
         loss = self.criterion(outputs, tgt_output)
 
         # Extra supervision
-        sp_loss = self.support(img)
+        # sp_loss = self.support(img)
 
         # Total
-        total_loss = loss + sp_loss
+        total_loss = loss  # + sp_loss
         # total_loss = loss
         total_loss.backward()
 
@@ -518,6 +516,10 @@ class DomAvs(nn.Module):
         # Discriminator
         self.d_net = nn.Linear(hidden_size, 2)
         self.d_loss = nn.CrossEntropyLoss()
+
+    def torch_to_numpy(self, images):
+        device = image.device()
+        image = image.cpu()
 
     def forward(self, image):
         batch_size = image.shape[0]

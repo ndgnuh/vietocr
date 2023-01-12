@@ -104,7 +104,8 @@ class OCRDataset(Dataset):
         img = Image.open(buf).convert('RGB')
 
         if self.transform:
-            img = self.transform(img)
+            img = self.transform(image=np.array(img))
+            img = Image.fromarray(img['image'])
 
         img_bw = process_image(img, self.image_height,
                                self.image_min_width, self.image_max_width)
