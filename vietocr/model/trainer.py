@@ -132,7 +132,7 @@ class Trainer(LightningLite):
         gpu_time = TotalTimer()
         load_time = AverageTimer()
 
-        train_data = train_data
+        train_data = cycle(train_data)
 
         # Avoid getattr calls in the loop
         print_every = self.print_every
@@ -143,9 +143,9 @@ class Trainer(LightningLite):
         # 1 indexing in this case is better
         # - don't have to check for step > 0
         # - don't have to align the "validate every" config for the last step
-        step = 0
-        for batch in tqdm(train_data, desc="Training", dynamic_ncols=True):
-            step += 1
+        for step in trange(1, self.total_steps + 1, desc="Training", dynamic_ncols=True):
+            with load_time:
+                batch = next(train_data)
 
             # Training step
             with gpu_time:
