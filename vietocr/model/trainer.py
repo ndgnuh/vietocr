@@ -8,7 +8,7 @@ import torch
 
 from . import losses
 from ..tool.translate import build_model
-from ..tool.stats import AverageStatistic
+from ..tool.stats import AverageStatistic, MaxStatistic
 from ..tool.utils import compute_accuracy
 from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
@@ -97,28 +97,52 @@ class Trainer(LightningLite):
         train_data = self.setup_dataloaders(self.train_data)
         model, optimizer = self.setup(self.model, self.optimizer)
 
+        metrics = {}
+
+        train_loss = AverageStatistic()
+        best_full_seq = MaxStatistic()
+
         train_data = cycle(train_data)
-        for step in trange(self.total_steps, desc="Training", dynamic_ncols=True):
+
+        # Avoid getattr calls in the loop
+        print_every = self.print_every
+        validate_every = self.validate_every
+
+        # 1 indexing in this case is better
+        # - don't have to check for step > 0
+        # - don't have to align the "validate every" config for the last step
+        for step in trange(1, self.total_steps + 1, desc="Training", dynamic_ncols=True):
             batch = next(train_data)
             # Training step
-            basic_train_step(
+            loss = basic_train_step(
                 self,
                 model,
                 batch,
                 optimizer=optimizer,
                 criterion=self.criterion
             )
-            # model.train()
-            # optimizer.zero_grad()
-            # outputs = model(images, labels)
-            # loss = self.criterion(outputs, labels)
-            # self.backward(loss)
-            # optimizer.step()
+            train_loss.append(loss.item())
+
             self.lr_scheduler.step()
-            
-            if step % self.validate_every == 0 and step > 0:
+
+            if step % validate_every == 0:
                 metrics = self.validate()
-                ic(metrics)
+                info = (
+                    f"Validating",
+                    f"Loss: {metrics['val_loss']:.4f}",
+                    f"Full seq: {metrics['full_seq']:.4f}",
+                    f"Per char: {metrics['per_char']:.4f}",
+                )
+                tqdm.write(" - ".join(info))
+
+            if step % print_every == 0:
+                mean_train_loss = train_loss.summarize()
+                
+                info = (
+                    f"Training: {step}/{self.total_steps}",
+                    f"Loss: {mean_train_loss:.4f}",
+                )
+                tqdm.write(" - ".join(info))
 
 
     @torch.no_grad()
