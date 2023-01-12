@@ -5,7 +5,9 @@ from torch.optim import lr_scheduler
 from tqdm import tqdm, trange
 from itertools import cycle
 from os import path
+from dataclasses import dataclass
 import torch
+import random
 
 from . import losses
 from .. import const
@@ -21,18 +23,18 @@ from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
 
 
-def basic_train_step(lite, model, batch, criterion, optimizer):
+def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
     model.train()
     optimizer.zero_grad()
     images, labels = batch
-    outputs = model(images, labels)
+    outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels)
     lite.backward(loss)
     optimizer.step()
     return loss
 
 
-def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.3):
+def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.3, teacher_forcing: bool = False):
     model.train()
 
     # Generating gradient on the input images
@@ -58,7 +60,7 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.3
 
     # Train on perturbed image
     optimizer.zero_grad()
-    outputs = model(perturbed_images, labels)
+    outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels)
     lite.backward(loss)
     optimizer.step()
@@ -85,6 +87,14 @@ class Trainer(LightningLite):
         if isinstance(self.validate_every, float):
             self.validate_every = int(self.total_steps * self.validate_every)
         self.print_every = self.validate_every // 5
+        self.tfs = TeacherForcingScheduler(
+            start_step=training_config.get('teacher_forcing_start', 0),
+            end_step=training_config.get(
+                'teacher_forcing_end',
+                50000
+            ),
+            p0=training_config.get('teacher_forcing_max_prob', 1)
+        )
 
         # Models
         # Leave the device stuff to lightning
@@ -139,6 +149,7 @@ class Trainer(LightningLite):
         validate_every = self.validate_every
         lr_scheduler = self.lr_scheduler
         criterion = self.criterion
+        tf_scheduler = self.tfs
 
         # 1 indexing in this case is better
         # - don't have to check for step > 0
@@ -149,19 +160,22 @@ class Trainer(LightningLite):
 
             # Training step
             with gpu_time:
+                teacher_forcing = tf_scheduler.step()
                 loss = basic_train_step(
                     self,
                     model,
                     batch,
                     optimizer=optimizer,
-                    criterion=criterion
+                    criterion=criterion,
+                    teacher_forcing=teacher_forcing,
                 )
                 adversarial_train_step(
                     self,
                     model,
                     batch,
                     optimizer=optimizer,
-                    criterion=criterion
+                    criterion=criterion,
+                    teacher_forcing=teacher_forcing,
                 )
             train_loss.append(loss.item())
 
@@ -192,7 +206,8 @@ class Trainer(LightningLite):
                 info = (
                     f"Training: {step}/{self.total_steps}",
                     f"Loss: {mean_train_loss:.3f}",
-                    f"Lr: {lr:.1e}",
+                    f"LR: {lr:.1e}",
+                    f"TFR: {tf_scheduler.current_ratio():.2f}",
                     f"Best full seq: {best_full_seq.summarize():.2f}",
                     f"Load time: {load_time.summarize() * 1000:.2f}ms",
                     f"GPU time: {gpu_time.summarize():.2f}s",
@@ -236,3 +251,22 @@ class Trainer(LightningLite):
 
     def train(self):
         self.run()
+
+
+@dataclass
+class TeacherForcingScheduler:
+    start_step: int = 0
+    end_step: int = 30000
+    p0: float = 1
+    _step: int = 0
+
+    def current_ratio(self):
+        p = 1 - (self._step - self.start_step) / \
+            (self.end_step - self.start_step)
+        p = self.p0 * p
+        return min(max(p, 0), 1)
+
+    def step(self):
+        p = self.current_ratio()
+        self._step = self._step + 1
+        return random.random() <= p
