@@ -3,7 +3,6 @@ from functools import partial
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from tqdm import tqdm, trange
-from itertools import cycle
 from os import path
 from dataclasses import dataclass
 import torch
@@ -21,6 +20,14 @@ from ..tool.stats import (
 from ..tool.utils import compute_accuracy
 from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
+
+
+def cycle(total_steps, dataloader):
+    step = 0
+    while step < total_steps:
+        for batch in dataloader:
+            step = step + 1
+            yield step, batch
 
 
 def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
@@ -140,9 +147,6 @@ class Trainer(LightningLite):
         train_loss = AverageStatistic()
         best_full_seq = MaxStatistic()
         gpu_time = TotalTimer()
-        load_time = AverageTimer()
-
-        train_data = cycle(train_data)
 
         # Avoid getattr calls in the loop
         print_every = self.print_every
@@ -154,9 +158,11 @@ class Trainer(LightningLite):
         # 1 indexing in this case is better
         # - don't have to check for step > 0
         # - don't have to align the "validate every" config for the last step
-        for step in trange(1, self.total_steps + 1, desc="Training", dynamic_ncols=True):
-            with load_time:
-                batch = next(train_data)
+        pbar = tqdm(1, self.total_steps + 1,
+                    desc="Training",
+                    dynamic_ncols=True)
+        for step, batch in cycle(self.total_steps, train_data):
+            pbar.update(1)
 
             # Training step
             with gpu_time:
@@ -209,7 +215,6 @@ class Trainer(LightningLite):
                     f"LR: {lr:.1e}",
                     f"TFR: {tf_scheduler.current_ratio():.2f}",
                     f"Best full seq: {best_full_seq.summarize():.2f}",
-                    f"Load time: {load_time.summarize() * 1000:.2f}ms",
                     f"GPU time: {gpu_time.summarize():.2f}s",
                 )
                 tqdm.write(" - ".join(info))
