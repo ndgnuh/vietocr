@@ -1,10 +1,13 @@
+from ..tool import utils
+from .. import const
+from os import path
+from typing import Optional, Callable
 from vietocr.tool.translate import resize
 from vietocr.tool.create_dataset import createDataset
 from vietocr.tool.translate import process_image
 from torch.utils.data.sampler import Sampler
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-import time
 import six
 import lmdb
 import torch
@@ -19,9 +22,21 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 class OCRDataset(Dataset):
-    def __init__(self, lmdb_path, root_dir, annotation_path, vocab, image_height=32, image_min_width=32, image_max_width=512, transform=None):
+    def __init__(
+        self,
+        annotation_path: str,
+        vocab,
+        image_height: int = 32,
+        image_min_width: int = 32,
+        image_max_width: int = 512,
+        transform=None
+    ):
+        lmdb_path = get_lbdm_path(annotation_path)
+        root_dir = path.dirname(annotation_path)
+        annotation_path = path.basename(annotation_path)
+
         self.root_dir = root_dir
-        self.annotation_path = os.path.join(root_dir, annotation_path)
+        self.annotation_path = annotation_path
         self.vocab = vocab
         self.transform = transform
 
@@ -229,3 +244,51 @@ class Collator(object):
         }
 
         return rs
+
+
+def get_lbdm_path(annotation_path: str):
+    uuid = utils.annotation_uuid(annotation_path)
+    # Getting the basename
+    annotation_path = path.normpath(annotation_path)
+    basename = path.basename(annotation_path).replace("/", "-")
+    lmdb_name = f"{basename}-{uuid}"
+    return path.join(const.lmdb_dir, lmdb_name)
+
+
+def build_dataloader(
+    annotation_path: str,
+    image_height: int,
+    image_min_width: int,
+    image_max_width: int,
+    vocab,
+    transform: Optional[Callable] = None,
+    shuffle: Optional[bool] = False,
+    batch_size: Optional[int] = 1,
+    num_workers: Optional[int] = None,
+    curriculum: Optional[bool] =True,
+):
+    dataset = OCRDataset(annotation_path=annotation_path,
+                         vocab=vocab,
+                         transform=transform,
+                         image_height=image_height,
+                         image_min_width=image_min_width,
+                         image_max_width=image_max_width)
+
+    sampler = ClusterRandomSampler(
+        dataset,
+        batch_size,
+        shuffle=shuffle,
+        curriculum=curriculum
+    )
+    collate_fn = Collator()
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        collate_fn=collate_fn,
+        shuffle=False,
+        drop_last=False,
+        num_workers=num_workers,
+    )
+    return dataloader
