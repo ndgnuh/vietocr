@@ -4,9 +4,11 @@ from torch import nn, optim
 from torch.optim import lr_scheduler
 from tqdm import tqdm, trange
 from itertools import cycle
+from os import path
 import torch
 
 from . import losses
+from .. import const
 from ..tool.translate import build_model
 from ..tool.stats import AverageStatistic, MaxStatistic
 from ..tool.utils import compute_accuracy
@@ -49,6 +51,10 @@ class Trainer(LightningLite):
             accelerator = 'cpu'
         super().__init__()
         training_config = config['training']
+
+        # Checkpoint and saving
+        self.name = config['name']
+        self.output_weights_path = path.join(const.weight_dir, self.name + ".pth")
 
         # Scheduling stuffs
         self.total_steps = training_config['total_steps']
@@ -107,6 +113,8 @@ class Trainer(LightningLite):
         # Avoid getattr calls in the loop
         print_every = self.print_every
         validate_every = self.validate_every
+        lr_scheduler = self.lr_scheduler
+        criterion = self.criterion
 
         # 1 indexing in this case is better
         # - don't have to check for step > 0
@@ -119,11 +127,11 @@ class Trainer(LightningLite):
                 model,
                 batch,
                 optimizer=optimizer,
-                criterion=self.criterion
+                criterion=criterion
             )
             train_loss.append(loss.item())
 
-            self.lr_scheduler.step()
+            lr_scheduler.step()
 
             if step % validate_every == 0:
                 metrics = self.validate()
@@ -133,14 +141,24 @@ class Trainer(LightningLite):
                     f"Full seq: {metrics['full_seq']:.4f}",
                     f"Per char: {metrics['per_char']:.4f}",
                 )
+
                 tqdm.write(" - ".join(info))
+
+                # Check if new best
+                new_best = best_full_seq.append(metrics['full_seq'])
+                if new_best:
+                    torch.save(model.state_dict(), self.output_weights_path)
+                    tqdm.write(f"Model weights saved to {self.output_weights_path}")
 
             if step % print_every == 0:
                 mean_train_loss = train_loss.summarize()
+                lr = optimizer.param_groups[0]['lr']
                 
                 info = (
                     f"Training: {step}/{self.total_steps}",
                     f"Loss: {mean_train_loss:.4f}",
+                    f"Lr: {lr:.2e}",
+                    f"Best full seq: {best_full_seq.summarize():.2f}"
                 )
                 tqdm.write(" - ".join(info))
 
