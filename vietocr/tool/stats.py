@@ -42,7 +42,7 @@ class ReduceStatistic(Statistic):
 
 @dataclass
 class MaxStatistic(Statistic):
-    current: float = 99999
+    current: float = -1
 
     def append(self, x):
         if x > self.current:
