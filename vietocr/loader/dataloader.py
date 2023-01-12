@@ -252,7 +252,7 @@ def get_lbdm_path(annotation_path: str):
     uuid = utils.annotation_uuid(annotation_path)
     # Getting the basename
     annotation_path = path.normpath(annotation_path)
-    basename = path.basename(annotation_path).replace("/", "-")
+    basename = path.splitext(annotation_path)[0].replace("/", "-")
     lmdb_name = f"{basename}-{uuid}"
     return path.join(const.lmdb_dir, lmdb_name)
 
