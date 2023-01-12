@@ -13,6 +13,33 @@ from ..tool.utils import compute_accuracy
 from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
 
+def basic_train_step(lite, model, batch, criterion, optimizer):
+    model.train()
+    optimizer.zero_grad()
+    images, labels = batch
+    outputs = model(images, labels)
+    loss = criterion(outputs, labels)
+    lite.backward(loss)
+    optimizer.step()
+    return loss
+
+def adversarial_train_step(lite, model, batch, criterion, optimizer):
+    # Generating gradient on the input images
+    model.train()
+    optimizer.zero_grad()
+    images, labels = batch
+    images.require_grads = True
+    outputs = model(images, labels)
+
+    # Generating adversarial examples
+    loss = criterion(outputs, labels)
+    # TODO: 
+
+    # Training on the adversarial examples
+    optimizer.zero_grad()
+    lite.backward(loss)
+    optimizer.step()
+    return loss
 
 class Trainer(LightningLite):
     def __init__(self, config):
@@ -57,7 +84,6 @@ class Trainer(LightningLite):
             batch_size = training_config.get('batch_size', 1),
             num_workers = training_config.get('num_workers', 1),
         )
-
         self.train_data = build_dataloader_(
             annotation_path=training_config['train_annotation'],
             transform = default_augment
@@ -73,14 +99,21 @@ class Trainer(LightningLite):
 
         train_data = cycle(train_data)
         for step in trange(self.total_steps, desc="Training", dynamic_ncols=True):
+            batch = next(train_data)
             # Training step
-            model.train()
-            optimizer.zero_grad()
-            images, labels = next(train_data)
-            outputs = model(images, labels)
-            loss = self.criterion(outputs, labels)
-            self.backward(loss)
-            optimizer.step()
+            basic_train_step(
+                self,
+                model,
+                batch,
+                optimizer=optimizer,
+                criterion=self.criterion
+            )
+            # model.train()
+            # optimizer.zero_grad()
+            # outputs = model(images, labels)
+            # loss = self.criterion(outputs, labels)
+            # self.backward(loss)
+            # optimizer.step()
             self.lr_scheduler.step()
             
             if step % self.validate_every == 0 and step > 0:
