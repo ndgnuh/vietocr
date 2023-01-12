@@ -10,7 +10,12 @@ import torch
 from . import losses
 from .. import const
 from ..tool.translate import build_model
-from ..tool.stats import AverageStatistic, MaxStatistic
+from ..tool.stats import (
+    AverageStatistic,
+    MaxStatistic,
+    TotalTimer,
+    AverageTimer
+)
 from ..tool.utils import compute_accuracy
 from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
@@ -65,7 +70,8 @@ class Trainer(LightningLite):
 
 
         # Models
-        self.model, self.vocab = build_model(config)
+        # Leave the device stuff to lightning
+        self.model, self.vocab = build_model(config, move_to_device=False)
         self.criterion = losses.CrossEntropyLoss(vocab=self.vocab)
         self.optimizer = optim.AdamW(
             self.model.parameters(),
@@ -107,6 +113,8 @@ class Trainer(LightningLite):
 
         train_loss = AverageStatistic()
         best_full_seq = MaxStatistic()
+        gpu_time = TotalTimer()
+        load_time = AverageTimer()
 
         train_data = cycle(train_data)
 
@@ -120,15 +128,18 @@ class Trainer(LightningLite):
         # - don't have to check for step > 0
         # - don't have to align the "validate every" config for the last step
         for step in trange(1, self.total_steps + 1, desc="Training", dynamic_ncols=True):
-            batch = next(train_data)
+            with load_time:
+                batch = next(train_data)
+
             # Training step
-            loss = basic_train_step(
-                self,
-                model,
-                batch,
-                optimizer=optimizer,
-                criterion=criterion
-            )
+            with gpu_time:
+                loss = basic_train_step(
+                    self,
+                    model,
+                    batch,
+                    optimizer=optimizer,
+                    criterion=criterion
+                )
             train_loss.append(loss.item())
 
             lr_scheduler.step()
@@ -156,9 +167,11 @@ class Trainer(LightningLite):
                 
                 info = (
                     f"Training: {step}/{self.total_steps}",
-                    f"Loss: {mean_train_loss:.4f}",
-                    f"Lr: {lr:.2e}",
-                    f"Best full seq: {best_full_seq.summarize():.2f}"
+                    f"Loss: {mean_train_loss:.3f}",
+                    f"Lr: {lr:.1e}",
+                    f"Best full seq: {best_full_seq.summarize():.2f}",
+                    f"Load time: {load_time.summarize() * 1000:.2f}ms",
+                    f"GPU time: {gpu_time.summarize():.2f}s",
                 )
                 tqdm.write(" - ".join(info))
 
