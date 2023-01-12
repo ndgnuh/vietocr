@@ -48,8 +48,8 @@ class Trainer(LightningLite):
         if config.get('device', 'cuda'):
             accelerator = 'gpu'
         else:
-            accelerator = 'cpu'
-        super().__init__()
+            accelerator = None
+        super().__init__(accelerator=accelerator)
         training_config = config['training']
 
         # Checkpoint and saving
@@ -137,9 +137,9 @@ class Trainer(LightningLite):
                 metrics = self.validate()
                 info = (
                     f"Validating",
-                    f"Loss: {metrics['val_loss']:.4f}",
-                    f"Full seq: {metrics['full_seq']:.4f}",
-                    f"Per char: {metrics['per_char']:.4f}",
+                    f"Loss: {metrics['val_loss']:.3f}",
+                    f"Full seq: {metrics['full_seq']:.3f}",
+                    f"Per char: {metrics['per_char']:.3f}",
                 )
 
                 tqdm.write(" - ".join(info))
@@ -172,12 +172,13 @@ class Trainer(LightningLite):
         val_loss = AverageStatistic()
         full_seq = AverageStatistic()
         per_char = AverageStatistic()
+        criterion = self.criterion
 
         for images, labels in tqdm(data, desc="Validating", dynamic_ncols=True):
             outputs = model(images, labels)
 
             # Validation loss
-            loss = self.criterion(outputs, labels).item()
+            loss = criterion(outputs, labels).item()
             val_loss.append(loss)
 
             # Validation accuracies
