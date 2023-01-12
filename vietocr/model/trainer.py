@@ -158,9 +158,9 @@ class Trainer(LightningLite):
         # 1 indexing in this case is better
         # - don't have to check for step > 0
         # - don't have to align the "validate every" config for the last step
-        pbar = tqdm(1, self.total_steps + 1,
-                    desc="Training",
-                    dynamic_ncols=True)
+        pbar = trange(1, self.total_steps + 1,
+                      desc="Training",
+                      dynamic_ncols=True)
         for step, batch in cycle(self.total_steps, train_data):
             pbar.update(1)
 
