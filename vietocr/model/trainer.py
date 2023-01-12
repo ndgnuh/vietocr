@@ -6,7 +6,10 @@ from tqdm import tqdm, trange
 from itertools import cycle
 import torch
 
+from . import losses
 from ..tool.translate import build_model
+from ..tool.stats import AverageStatistic
+from ..tool.utils import compute_accuracy
 from ..loader.aug import default_augment
 from ..loader.dataloader import build_dataloader
 
@@ -28,7 +31,9 @@ class Trainer(LightningLite):
         self.print_every = self.validate_every // 5
 
 
+        # Models
         self.model, self.vocab = build_model(config)
+        self.criterion = losses.CrossEntropyLoss(vocab=self.vocab)
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=training_config['learning_rate'],
@@ -58,7 +63,7 @@ class Trainer(LightningLite):
             transform = default_augment
         )
         self.validate_data = build_dataloader_(
-            annotation_path=training_config['train_annotation'],
+            annotation_path=training_config['validate_annotation'],
             transform = None
         )
 
@@ -68,18 +73,53 @@ class Trainer(LightningLite):
 
         train_data = cycle(train_data)
         for step in trange(self.total_steps, desc="Training", dynamic_ncols=True):
+            # Training step
+            model.train()
+            optimizer.zero_grad()
             images, labels = next(train_data)
-            outputs = model(images)
+            outputs = model(images, labels)
+            loss = self.criterion(outputs, labels)
+            self.backward(loss)
+            optimizer.step()
+            self.lr_scheduler.step()
             
             if step % self.validate_every == 0 and step > 0:
-                self.validate()
+                metrics = self.validate()
+                ic(metrics)
 
 
     @torch.no_grad()
     def validate(self):
         data = self.setup_dataloaders(self.validate_data)
-        for batch in tqdm(data, desc="Validating", dynamic_ncols=True):
-            pass
+        model = self.setup(self.model)
+        model.eval()
+
+        val_loss = AverageStatistic()
+        full_seq = AverageStatistic()
+        per_char = AverageStatistic()
+
+        for images, labels in tqdm(data, desc="Validating", dynamic_ncols=True):
+            outputs = model(images, labels)
+
+            # Validation loss
+            loss = self.criterion(outputs, labels).item()
+            val_loss.append(loss)
+
+            # Validation accuracies
+            confidences, predictions = outputs.topk(k=1, dim=-1)
+            predictions = predictions.squeeze(-1)
+            pr_sents = self.vocab.batch_decode(predictions.tolist())
+            gt_sents = self.vocab.batch_decode(labels.tolist())
+
+            full_seq.append(compute_accuracy(pr_sents, gt_sents, 'full_sequence'))
+            per_char.append(compute_accuracy(pr_sents, gt_sents, 'per_char'))
+
+        metrics = dict(
+            val_loss = val_loss.summarize(),
+            full_seq = full_seq.summarize(),
+            per_char = per_char.summarize(),
+        )
+        return metrics
 
     def train(self):
         self.run()
