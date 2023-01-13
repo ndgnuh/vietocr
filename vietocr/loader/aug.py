@@ -7,8 +7,6 @@ default_augment = A.Compose([
         A.CLAHE(p=p),
         A.ColorJitter(p=p),
         A.Emboss(p=p),
-        A.Equalize(p=p),
-        A.FancyPCA(p=p),
         A.HueSaturationValue(p=p),
         A.InvertImg(p=p),
         A.RandomBrightnessContrast(p=p),
@@ -47,19 +45,19 @@ default_augment = A.Compose([
     A.OneOf([
         A.ImageCompression(p=p),
         A.GaussianBlur(p=p),
-        A.Defocus(p=p),
+        A.Defocus(radius=(1, 3), p=p),
         A.Posterize(p=p),
-        A.GlassBlur(p=p),
-        A.MedianBlur(p=p),
+        A.GlassBlur(sigma=0.1, max_delta=1, iterations=1, p=p),
+        A.MedianBlur(blur_limit=3, p=p),
         A.MotionBlur(p=p),
-        A.ZoomBlur(p=p),
+        A.ZoomBlur(max_factor=1.1, p=p),
     ]),
 
     # Spatial transform
     A.OneOf([
-        A.ElasticTransform(p=p),
-        A.Perspective(p=p),
-        A.PiecewiseAffine(p=p),
+        A.ElasticTransform(alpha=1, sigma=1, alpha_affine=1, p=p),
+        A.Perspective(fit_output=True, p=p),
+        A.PiecewiseAffine(nb_rows=3, nb_cols=3, p=p),
         # A.ShiftScaleRotate(p=p),
         # A.SafeRotate((-10, 10), p=p),
     ])
