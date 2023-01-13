@@ -46,10 +46,8 @@ default_augment = A.Compose([
     # Image degration
     A.OneOf([
         A.ImageCompression(p=p),
-        A.JpegCompression(p=p),
         A.GaussianBlur(p=p),
         A.Defocus(p=p),
-        A.Downscale(p=p),
         A.Posterize(p=p),
         A.GlassBlur(p=p),
         A.MedianBlur(p=p),
@@ -62,7 +60,7 @@ default_augment = A.Compose([
         A.ElasticTransform(p=p),
         A.Perspective(p=p),
         A.PiecewiseAffine(p=p),
-        A.ShiftScaleRotate(p=p),
-        A.SafeRotate((-10, 10), p=p),
+        # A.ShiftScaleRotate(p=p),
+        # A.SafeRotate((-10, 10), p=p),
     ])
 ])
