@@ -165,12 +165,11 @@ def load_weights(path):
     return weights
 
 
-def build_model(config):
+def build_model(config, move_to_device=True):
     if config['type'] == 's2s':
         vocab = VocabS2S(config['vocab'])
     elif config['type'] == 'ctc':
         vocab = VocabCTC(config['vocab'])
-    device = utils.get_device(config.get('device', None))
 
     model = VietOCR(len(vocab),
                     config['backbone'],
@@ -187,7 +186,9 @@ def build_model(config):
         ])
         print(f"Mismatch keys:\n{errors}")
 
-    model = model.to(device)
+    if move_to_device:
+        device = utils.get_device(config.get('device', None))
+        model = model.to(device)
 
     return model, vocab
 

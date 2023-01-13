@@ -41,6 +41,21 @@ class ReduceStatistic(Statistic):
 
 
 @dataclass
+class MaxStatistic(Statistic):
+    current: float = -1
+
+    def append(self, x):
+        if x > self.current:
+            self.current = x
+            return True
+        else:
+            return False
+
+    def summarize(self):
+        return self.current
+
+
+@dataclass
 class AverageStatistic(Statistic):
     acc: float = 0
     count: int = 0
