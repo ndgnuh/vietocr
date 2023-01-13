@@ -19,19 +19,9 @@ def main(config, options):
     model, vocab = build_model(config)
     model.eval()
 
-    lmdb_path = path.join(
-        const.lmdb_dir,
-        utils.annotation_uuid(annotation_path)
-    )
-
-    data_root = path.dirname(annotation_path)
-    annotation_path = path.basename(annotation_path)
-
     # TODO: rewrite dataset so that the image can be loaded without
     # using a dataloader, collator and sampler
-    dataset = OCRDataset(lmdb_path=lmdb_path,
-                         root_dir=data_root,
-                         annotation_path=annotation_path,
+    dataset = OCRDataset(annotation_path=annotation_path,
                          vocab=vocab,
                          image_height=config['image_height'],
                          image_min_width=config['image_min_width'],
@@ -58,9 +48,9 @@ def main(config, options):
     all_pr_sents = []
     all_gt_sents = []
     device = next(model.parameters()).device
-    for batch in tqdm(test_loader):
-        img = batch['img'].to(device)
-        tgt_output = batch['tgt_output'].to(device)
+    for img, tgt_output in tqdm(test_loader):
+        img = img.to(device)
+        tgt_output = tgt_output.to(device)
 
         # Predict, no teacher forcing
         # the tgt output is only for seq length
