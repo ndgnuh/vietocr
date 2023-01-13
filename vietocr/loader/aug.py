@@ -22,12 +22,14 @@ default_augment = A.Compose([
     ]),
 
     # Overlays
-    A.OneOf([
-        A.RandomShadow(p=p),
-        A.RandomFog(p=p),
-        A.RandomSnow(p=p),
-        A.RandomSunFlare(p=p),
-    ]),
+    # Disabled due to
+    # https://github.com/albumentations-team/albumentations/issues/361
+    # A.OneOf([
+    #     A.RandomShadow(p=p),
+    #     A.RandomFog(p=p),
+    #     A.RandomSnow(p=p),
+    #     A.RandomSunFlare(p=p),
+    # ]),
 
     # Noises
     A.OneOf([
