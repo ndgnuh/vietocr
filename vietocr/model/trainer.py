@@ -41,7 +41,7 @@ def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: 
     return loss
 
 
-def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.3, teacher_forcing: bool = False):
+def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.05, teacher_forcing: bool = False):
     model.train()
 
     # Generating gradient on the input images
@@ -57,6 +57,7 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.3
     data_grad = images.grad
     for p in model.parameters():
         p.requires_grad = True
+    images.requires_grad = False
 
     # Generating adversarial examples
     sign_data_grad = data_grad.sign()
