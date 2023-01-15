@@ -2,9 +2,17 @@ import streamlit as st
 import albumentations as A
 import inspect
 import numpy as np
+from vietocr.loader.aug import default_augment
 from PIL import Image
 
 all_augmentations = [
+    "all",
+    "SafeRotate",
+    "ShiftScaleRotate",
+    "RandomShadow",
+    "RandomFog",
+    "RandomSnow",
+    "RandomSunFlare",
     "CLAHE",
     "ColorJitter",
     "Emboss",
@@ -40,7 +48,10 @@ if image is None:
     st.stop()
 
 augmentation = st.selectbox("Augmentation", all_augmentations)
-Aug = getattr(A, augmentation)
+if augmentation == "all":
+    def Aug(p=None, always_apply=None): return default_augment
+else:
+    Aug = getattr(A, augmentation)
 cols = st.columns(4)
 sigs = inspect.signature(Aug)
 st.write(dict(sigs.parameters))
@@ -67,6 +78,6 @@ with c1:
 with c2:
     st.subheader("Augmented")
     aug = Aug(**kwargs)
-    image = np.array(Image.open(image))
+    image = np.array(Image.open(image).convert("RGB"))
     if rerun:
         st.image(aug(image=image)['image'])

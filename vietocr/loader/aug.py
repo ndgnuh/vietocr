@@ -8,8 +8,8 @@ default_augment = A.Compose([
         A.ColorJitter(p=p),
         A.Emboss(p=p),
         A.HueSaturationValue(p=p),
-        A.InvertImg(p=p),
         A.RandomBrightnessContrast(p=p),
+        A.InvertImg(p=p),
         A.RGBShift(p=p),
     ]),
 
@@ -20,14 +20,10 @@ default_augment = A.Compose([
     ]),
 
     # Overlays
-    # Disabled due to
+    # Fog, snow, sunflare are disabled
+    # due to deadlock bug and readability
     # https://github.com/albumentations-team/albumentations/issues/361
-    # A.OneOf([
-    #     A.RandomShadow(p=p),
-    #     A.RandomFog(p=p),
-    #     A.RandomSnow(p=p),
-    #     A.RandomSunFlare(p=p),
-    # ]),
+    A.RandomShadow(p=p),
 
     # Noises
     A.OneOf([
@@ -57,7 +53,11 @@ default_augment = A.Compose([
     A.OneOf([
         A.ElasticTransform(alpha=1, sigma=1, alpha_affine=1, p=p),
         A.Perspective(fit_output=True, p=p),
-        A.PiecewiseAffine(nb_rows=3, nb_cols=3, p=p),
+
+        # Removed due to bug
+        # A.PiecewiseAffine(nb_rows=3, nb_cols=3, p=p),
+
+        # Removed due to making the output out of range
         # A.ShiftScaleRotate(p=p),
         # A.SafeRotate((-10, 10), p=p),
     ])
