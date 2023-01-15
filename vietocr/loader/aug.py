@@ -11,10 +11,6 @@ default_augment = A.Compose([
         A.RandomBrightnessContrast(p=p),
         A.InvertImg(p=p),
         A.RGBShift(p=p),
-    ]),
-
-    # Grayscale
-    A.OneOf([
         A.ToSepia(p=p),
         A.ToGray(p=p),
     ]),
