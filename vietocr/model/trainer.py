@@ -24,10 +24,13 @@ from ..loader.dataloader import build_dataloader
 
 def cycle(total_steps, dataloader):
     step = 0
-    while step < total_steps:
+    while True:
         for batch in dataloader:
             step = step + 1
             yield step, batch
+
+            if step == total_steps:
+                return
 
 
 def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
