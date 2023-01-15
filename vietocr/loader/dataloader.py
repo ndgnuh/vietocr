@@ -267,7 +267,7 @@ def build_dataloader(
     shuffle: Optional[bool] = False,
     batch_size: Optional[int] = 1,
     num_workers: Optional[int] = None,
-    curriculum: Optional[bool] =True,
+    curriculum: Optional[bool] = True,
 ):
     dataset = OCRDataset(annotation_path=annotation_path,
                          vocab=vocab,
