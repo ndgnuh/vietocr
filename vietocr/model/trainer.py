@@ -69,7 +69,7 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.0
     # Train on perturbed image
     optimizer.zero_grad()
     outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
-    loss = criterion(outputs, labels)
+    loss = criterion(outputs, labels) * 0.05
     lite.backward(loss)
     optimizer.step()
     return loss
@@ -117,7 +117,8 @@ class Trainer(LightningLite):
         self.lr_scheduler = lr_scheduler.OneCycleLR(
             self.optimizer,
             total_steps=training_config['total_steps'],
-            max_lr=training_config['learning_rate']
+            max_lr=training_config['learning_rate'],
+            pct_start=0.1,
         )
 
         # Dataloaders
@@ -176,14 +177,14 @@ class Trainer(LightningLite):
                     criterion=criterion,
                     teacher_forcing=teacher_forcing,
                 )
-                adversarial_train_step(
-                    self,
-                    model,
-                    batch,
-                    optimizer=optimizer,
-                    criterion=criterion,
-                    teacher_forcing=teacher_forcing,
-                )
+                # adversarial_train_step(
+                #     self,
+                #     model,
+                #     batch,
+                #     optimizer=optimizer,
+                #     criterion=criterion,
+                #     teacher_forcing=teacher_forcing,
+                # )
             train_loss.append(loss.item())
 
             lr_scheduler.step()
@@ -231,6 +232,9 @@ class Trainer(LightningLite):
         per_char = AverageStatistic()
         criterion = self.criterion
 
+        all_gts = []
+        all_prs = []
+
         for images, labels in tqdm(data, desc="Validating", dynamic_ncols=True):
             outputs = model(images, labels)
 
@@ -243,10 +247,22 @@ class Trainer(LightningLite):
             predictions = predictions.squeeze(-1)
             pr_sents = self.vocab.batch_decode(predictions.tolist())
             gt_sents = self.vocab.batch_decode(labels.tolist())
-
             full_seq.append(compute_accuracy(
                 pr_sents, gt_sents, 'full_sequence'))
             per_char.append(compute_accuracy(pr_sents, gt_sents, 'per_char'))
+
+            # Predictions
+            all_gts.extend(gt_sents)
+            all_prs.extend(pr_sents)
+
+        # Randomly print 5 of the PR-GT
+        n = len(all_gts)
+        idx = [random.randint(0, n - 1) for i in range(n)]
+        info = [
+            f"PR: {all_prs[i]}\nGT: {all_gts[i]}"
+            for i in idx
+        ]
+        tqdm.write("\n~~~~~~\n".join(info))
 
         metrics = dict(
             val_loss=val_loss.summarize(),
