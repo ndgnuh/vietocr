@@ -140,8 +140,8 @@ class OCRDataset(Dataset):
             img = Image.fromarray(img['image'])
 
         if self.letterbox:
-            img_bw = letterbox_image(
-                image,
+            img = letterbox_image(
+                img,
                 (self.image_max_width, self.image_height)
             )
 
