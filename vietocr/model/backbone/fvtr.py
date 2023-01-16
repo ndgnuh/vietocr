@@ -331,7 +331,7 @@ def create_permutation(localities: List, stage_length: List[int]):
     return permutations
 
 
-def fvtr_t(output_size):
+def fvtr_t(output_size, **opts):
     L, G = True, False
     permutations = create_permutation([L] * 6 + [G] * 6, [3, 6, 3])
     heads = [2, 4, 8]
@@ -340,10 +340,11 @@ def fvtr_t(output_size):
         output_size=output_size,
         permutations=permutations,
         num_attention_heads=heads,
-        hidden_sizes=hidden_sizes)
+        hidden_sizes=hidden_sizes,
+        **opts)
 
 
-def fvtr_s(output_size):
+def fvtr_s(output_size, **opts):
     # Models | [D0, D1, D2]    | [L1, L2, L3] | Heads      | D3  | Permutation
     # ---    | ---             | ---          | ---        | --- | ---
     # FVTR-S | [96, 192, 256]  | [3, 6, 6]    | [3, 6, 8]  | 192 | [L]8[G]7
@@ -355,10 +356,11 @@ def fvtr_s(output_size):
         output_size=output_size,
         permutations=permutations,
         num_attention_heads=heads,
-        hidden_sizes=hidden_sizes)
+        hidden_sizes=hidden_sizes,
+        **opts)
 
 
-def fvtr_b(output_size):
+def fvtr_b(output_size, **opts):
     # Models | [D0, D1, D2]    | [L1, L2, L3] | Heads      | D3  | Permutation
     # ---    | ---             | ---          | ---        | --- | ---
     # FVTR-B | [128, 256, 384] | [3, 6, 9]    | [4, 8, 12] | 256 | [L]8[G]10
@@ -370,10 +372,11 @@ def fvtr_b(output_size):
         output_size=output_size,
         permutations=permutations,
         num_attention_heads=heads,
-        hidden_sizes=hidden_sizes)
+        hidden_sizes=hidden_sizes,
+        **opts)
 
 
-def fvtr_l(output_size):
+def fvtr_l(output_size, **opts):
     # Models | [D0, D1, D2]    | [L1, L2, L3] | Heads      | D3  | Permutation
     # ---    | ---             | ---          | ---        | --- | ---
     # FVTR-L | [192, 256, 512] | [3, 9, 9]    | [6, 8, 16] | 384 | [L]10[G]11
@@ -385,7 +388,8 @@ def fvtr_l(output_size):
         output_size=output_size,
         permutations=permutations,
         num_attention_heads=heads,
-        hidden_sizes=hidden_sizes)
+        hidden_sizes=hidden_sizes,
+        **opts)
 
 
 models = {
