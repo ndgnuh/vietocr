@@ -21,3 +21,4 @@ transformer:
 image_height: 32
 image_min_width: 64
 image_max_width: 512
+image_letterbox: false

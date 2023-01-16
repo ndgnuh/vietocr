@@ -16,9 +16,24 @@ from collections import defaultdict
 import sys
 import os
 import random
+from io import BytesIO
 from PIL import Image
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+
+def letterbox_image(image, size):
+    # resize image with unchanged aspect ratio using padding
+    iw, ih = image.size
+    w, h = size
+    scale = min(w/iw, h/ih)
+    nw = int(iw*scale)
+    nh = int(ih*scale)
+
+    image = image.resize((nw, nh), Image.BICUBIC)
+    new_image = Image.new('RGB', size, (128, 128, 128))
+    new_image.paste(image, ((w-nw)//2, (h-nh)//2))
+    return new_image
 
 
 class OCRDataset(Dataset):
@@ -29,7 +44,8 @@ class OCRDataset(Dataset):
         image_height: int = 32,
         image_min_width: int = 32,
         image_max_width: int = 512,
-        transform=None
+        transform=None,
+        letterbox: bool = False,
     ):
         lmdb_path = get_lbdm_path(annotation_path)
         root_dir = path.dirname(annotation_path)
@@ -45,6 +61,7 @@ class OCRDataset(Dataset):
         self.image_max_width = image_max_width
 
         self.lmdb_path = lmdb_path
+        self.letterbox = letterbox
 
         if os.path.isdir(self.lmdb_path):
             print('{} exists. Remove folder if you want to create new dataset'.format(
@@ -122,9 +139,14 @@ class OCRDataset(Dataset):
             img = self.transform(image=np.array(img))
             img = Image.fromarray(img['image'])
 
+        if self.letterbox:
+            img_bw = letterbox_image(
+                image,
+                (self.image_max_width, self.image_height)
+            )
+
         img_bw = process_image(img, self.image_height,
                                self.image_min_width, self.image_max_width)
-
         word = self.vocab.encode(label)
 
         return img_bw, word, img_path
@@ -198,14 +220,12 @@ class Collator(object):
         self.masked_language_model = masked_language_model
 
     def __call__(self, batch):
-        filenames = []
         img = []
         target_weights = []
         tgt_input = []
         max_label_len = max(len(sample['word']) for sample in batch)
         for sample in batch:
             img.append(sample['img'])
-            filenames.append(sample['img_path'])
             label = sample['word']
             label_len = len(label)
 
@@ -233,7 +253,7 @@ class Collator(object):
                 tgt_input != 1) & (tgt_input != 2)
             tgt_input[mask] = 3
 
-        tgt_padding_mask = np.array(target_weights) == 0
+        # tgt_padding_mask = np.array(target_weights) == 0
 
         image = torch.FloatTensor(img)
         target = torch.LongTensor(tgt_output)
@@ -268,13 +288,15 @@ def build_dataloader(
     batch_size: Optional[int] = 1,
     num_workers: Optional[int] = None,
     curriculum: Optional[bool] = True,
+    letterbox: Optional[bool] = False
 ):
     dataset = OCRDataset(annotation_path=annotation_path,
                          vocab=vocab,
                          transform=transform,
                          image_height=image_height,
                          image_min_width=image_min_width,
-                         image_max_width=image_max_width)
+                         image_max_width=image_max_width,
+                         letterbox=letterbox)
 
     sampler = ClusterRandomSampler(
         dataset,
