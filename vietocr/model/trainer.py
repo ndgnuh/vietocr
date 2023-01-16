@@ -107,7 +107,11 @@ class Trainer(LightningLite):
         # Models
         # Leave the device stuff to lightning
         self.model, self.vocab = build_model(config, move_to_device=False)
-        self.criterion = losses.CrossEntropyLoss(vocab=self.vocab)
+        if config['type'] == 's2s':
+            self.criterion = losses.CrossEntropyLoss(vocab=self.vocab)
+        else:
+            self.criterion = losses.CTCLoss(vocab=self.vocab)
+
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=training_config['learning_rate'],
