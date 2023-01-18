@@ -1,0 +1,23 @@
+# change to list chars of your dataset or use default vietnamese chars
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+type: ctc
+
+# weights: https://github.com/ndgnuh/vietocr/releases/download/weights/sfn_v2_x1_5_s2s.pth
+# weights: storage/weights/sfn_v2_x1_5_s2s.pth
+
+backbone: fvtr_t
+cnn:
+  output_size: 256
+  max_position_ids: 192
+
+seq_modeling: rfng
+transformer:
+  head_size: 256
+  num_attention_heads: 4
+  num_layers: 5
+
+image_height: 32
+image_min_width: 64
+image_max_width: 512
+image_letterbox: false
+

@@ -2,6 +2,7 @@ from vietocr.model.backbone.cnn import CNN
 from vietocr.model.seqmodel.transformer import LanguageTransformer
 from vietocr.model.seqmodel.seq2seq import Seq2Seq
 from vietocr.model.seqmodel.convseq2seq import ConvSeq2Seq
+from vietocr.model.seqmodel.rfng import RefineAndGuess
 from vietocr.model.stn import SpatialTransformer
 from torch import nn
 
@@ -39,14 +40,26 @@ class NoSeqDecoder(nn.Module):
             NoSeqDecoderLayer(head_size, num_attention_heads)
             for _ in range(num_layers)
         ])
+        self.cfc_1 = nn.Conv1d(head_size, head_size, kernel_size=5, padding=2)
+        self.cfc_2 = nn.Conv1d(head_size, head_size, kernel_size=7, padding=3)
+        self.cfc_3 = nn.Conv1d(head_size, head_size, kernel_size=11, padding=5)
+        self.act = nn.GELU()
         self.fc = nn.Linear(head_size, vocab_size)
 
     def forward(self, feature):
+        # t b h
         x = feature
         for layer in self.layers:
             x = layer(x, feature)
+
+        # t b h -> b t h -> b h t
+        x = x.transpose(0, 1).transpose(1, 2)
+        x = x + self.cfc_1(x) + self.cfc_2(x) + self.cfc_3(x)
+        x = self.act(x)
+
+        # b h t -> b t h
+        x = x.transpose(1, 2)
         x = self.fc(x)
-        x = x.transpose(0, 1)
         return x
 
 
@@ -69,6 +82,8 @@ class VietOCR(nn.Module):
             self.transformer = Seq2Seq(vocab_size, **transformer_args)
         elif seq_modeling == 'convseq2seq':
             self.transformer = ConvSeq2Seq(vocab_size, **transformer_args)
+        elif seq_modeling == 'rfng':
+            self.transformer = RefineAndGuess(vocab_size, **transformer_args)
         elif seq_modeling == 'none' or seq_modeling is None:
             self.transformer = NoSeqDecoder(vocab_size, **transformer_args)
         else:
@@ -105,6 +120,8 @@ class VietOCR(nn.Module):
             )
         elif self.seq_modeling == 'convseq2seq':
             outputs = self.transformer(src, tgt_input)
+        elif self.seq_modeling == 'rfng':
+            outputs = self.transformer(src)
         elif self.seq_modeling == 'none' or self.seq_modeling is None:
             outputs = self.transformer(src)
         return outputs
