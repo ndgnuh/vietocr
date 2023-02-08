@@ -8,11 +8,7 @@ from torch import nn
 
 
 class FC(nn.Module):
-    def __init__(self,
-                 vocab_size,
-                 head_size,
-                 num_attention_heads,
-                 num_layers):
+    def __init__(self, vocab_size, head_size):
         super().__init__()
         self.fc = nn.Linear(head_size, vocab_size)
 
