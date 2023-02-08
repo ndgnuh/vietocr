@@ -180,7 +180,7 @@ class VocabS2S(Vocab):
         else:
             ids = ids[first:]
         sent = ''.join([self.i2c[i] for i in ids if self.is_normal_id(i)])
-        return sent
+        return sent.strip(" ")
 
 
 class VocabCTC(Vocab):
@@ -208,4 +208,4 @@ class VocabCTC(Vocab):
         from itertools import groupby
         collapsed = [self.i2c[i] for i, _ in groupby(ids)
                      if i != self.blank_id]
-        return ''.join(collapsed)
+        return ''.join(collapsed).strip(" ")
