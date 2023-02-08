@@ -2,15 +2,14 @@
 vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 type: ctc
 
-# weights: https://github.com/ndgnuh/vietocr/releases/download/weights/sfn_v2_x1_5_s2s.pth
-# weights: storage/weights/sfn_v2_x1_5_s2s.pth
+weights: https://github.com/ndgnuh/vietocr/releases/download/weights/fvtr_t_ctc.pth
 
 backbone: fvtr_t
 cnn:
   output_size: 256
   max_position_ids: 192
 
-seq_modeling: rfng
+seq_modeling: none
 transformer:
   head_size: 256
   num_attention_heads: 4

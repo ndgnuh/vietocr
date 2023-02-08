@@ -7,59 +7,19 @@ from vietocr.model.stn import SpatialTransformer
 from torch import nn
 
 
-class NoSeqDecoderLayer(nn.Module):
-    def __init__(self, head_size, num_attention_heads):
-        super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(head_size, head_size * 4),
-            nn.GELU(),
-            nn.Linear(head_size * 4, head_size),
-            nn.LayerNorm(head_size)
-        )
-        self.KV = nn.Linear(head_size, head_size*2)
-        self.attn = nn.MultiheadAttention(head_size, num_attention_heads)
-        self.norm = nn.LayerNorm(head_size)
-        self.act = nn.GELU()
-
-    def forward(self, x, img_feature):
-        K, V = self.KV(x).chunk(2, dim=-1)
-        x_new, _ = self.attn(img_feature, K, V)
-        x = self.norm(x + x_new)
-        x = self.fc(x) + x
-        return x
-
-
-class NoSeqDecoder(nn.Module):
+class FC(nn.Module):
     def __init__(self,
                  vocab_size,
                  head_size,
                  num_attention_heads,
                  num_layers):
         super().__init__()
-        self.layers = nn.ModuleList([
-            NoSeqDecoderLayer(head_size, num_attention_heads)
-            for _ in range(num_layers)
-        ])
-        self.cfc_1 = nn.Conv1d(head_size, head_size, kernel_size=5, padding=2)
-        self.cfc_2 = nn.Conv1d(head_size, head_size, kernel_size=7, padding=3)
-        self.cfc_3 = nn.Conv1d(head_size, head_size, kernel_size=11, padding=5)
-        self.act = nn.GELU()
         self.fc = nn.Linear(head_size, vocab_size)
 
-    def forward(self, feature):
-        # t b h
-        x = feature
-        for layer in self.layers:
-            x = layer(x, feature)
-
-        # t b h -> b t h -> b h t
-        x = x.transpose(0, 1).transpose(1, 2)
-        x = x + self.cfc_1(x) + self.cfc_2(x) + self.cfc_3(x)
-        x = self.act(x)
-
-        # b h t -> b t h
-        x = x.transpose(1, 2)
+    def forward(self, x):
         x = self.fc(x)
+        # t b h -> b t h
+        x = x.transpose(0, 1)
         return x
 
 
@@ -85,7 +45,7 @@ class VietOCR(nn.Module):
         elif seq_modeling == 'rfng':
             self.transformer = RefineAndGuess(vocab_size, **transformer_args)
         elif seq_modeling == 'none' or seq_modeling is None:
-            self.transformer = NoSeqDecoder(vocab_size, **transformer_args)
+            self.transformer = FC(vocab_size, **transformer_args)
         else:
             raise('Not Support Seq Model')
 
