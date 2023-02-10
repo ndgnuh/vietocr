@@ -5,6 +5,7 @@ from vietocr.model.seqmodel.convseq2seq import ConvSeq2Seq
 from vietocr.model.seqmodel.rfng import RefineAndGuess
 from vietocr.model.stn import SpatialTransformer
 from torch import nn
+from torch.nn import functional as F
 
 
 class FC(nn.Module):
@@ -23,11 +24,12 @@ class VietOCR(nn.Module):
     def __init__(self, vocab_size,
                  backbone,
                  cnn_args,
-                 transformer_args, seq_modeling='transformer', stn=0):
+                 transformer_args,
+                 seq_modeling='transformer',
+                 stn=None):
 
         super(VietOCR, self).__init__()
-        if stn > 0:
-            self.stn = SpatialTransformer(stn)
+        self.stn = SpatialTransformer(stn)
         self.cnn = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
 
@@ -59,8 +61,7 @@ class VietOCR(nn.Module):
             - tgt_key_padding_mask: (N, T)
             - output: b t v
         """
-        if hasattr(self, "stn"):
-            img = self.stn(img)
+        img = self.stn(img)
 
         # src: [time, batch, hidden]
         src = self.cnn(img)

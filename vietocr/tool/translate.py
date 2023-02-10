@@ -176,7 +176,7 @@ def build_model(config, move_to_device=True):
                     config['cnn'],
                     config['transformer'],
                     config['seq_modeling'],
-                    stn=config.get('stn', 0))
+                    stn=config.get('stn', None))
     if 'weights' in config:
         weights = load_weights(config['weights'])
         errors = model.load_state_dict(weights, strict=False)
