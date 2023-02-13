@@ -9,7 +9,7 @@ config_dir = path.normpath(config_dir)
 
 url_config = {
     'fvtr_t_s2s': 'fvtr_t_s2s.yml',
-    'fvtr_t_ctc': 'fvtr_t_ctc.yml',
+    'fvtr_t_crnn': 'fvtr_t_crnn.yml',
     'fvtr_t_s2s_kr': 'fvtr_t_s2s.kr.yml',
     'inception_v3_seq2seq': 'inception_v3_s2s.yml',
     'inception_v3_seq2seq_large': 'inception_v3_s2s_large.yml',
