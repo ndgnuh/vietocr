@@ -20,7 +20,7 @@ class VSTN(nn.Module):
             nn.ConvTranspose2d(32, 16, 2, stride=2),
             nn.ReLU(True),
             nn.ConvTranspose2d(16, 2, 2, stride=2),
-            nn.Tanh(),
+            nn.Sigmoid(),
         )
 
     def forward(self, x):
