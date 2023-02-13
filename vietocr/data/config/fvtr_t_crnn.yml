@@ -13,7 +13,8 @@ cnn:
 
 seq_modeling: crnn
 transformer:
-  head_size: 256
+  input_size: 256
+  hidden_size: 256
 
 image_height: 32
 image_min_width: 32
