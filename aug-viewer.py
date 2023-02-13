@@ -2,11 +2,12 @@ import streamlit as st
 import albumentations as A
 import inspect
 import numpy as np
-from vietocr.loader.aug import default_augment
+from vietocr.loader.aug import default_augment, PatternOverlay
 from PIL import Image
 
 all_augmentations = [
     "all",
+    "PatternOverlay",
     "SafeRotate",
     "ShiftScaleRotate",
     "RandomShadow",
@@ -50,6 +51,9 @@ if image is None:
 augmentation = st.selectbox("Augmentation", all_augmentations)
 if augmentation == "all":
     def Aug(p=None, always_apply=None): return default_augment
+elif augmentation == "PatternOverlay":
+    def Aug(p=None, always_apply=None):
+        return PatternOverlay(patterns="vietocr/data/patterns/", p=1)
 else:
     Aug = getattr(A, augmentation)
 cols = st.columns(4)

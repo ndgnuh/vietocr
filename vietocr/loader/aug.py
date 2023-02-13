@@ -1,7 +1,53 @@
 import albumentations as A
+from os import path, listdir
+import random
+import numpy as np
+import cv2
+
+
+def random_crop(pattern, width, height):
+    ph, pw = pattern.shape[:2]
+    x0 = random.randint(0, pw - width)
+    y0 = random.randint(0, ph - height)
+    x1 = x0 + width
+    y1 = y0 + height
+    return pattern[y0:y1, x0:x1]
+
+
+class PatternOverlay:
+    def __init__(
+        self,
+        patterns: str,
+        alphas=(0.4, 0.7),
+        p: float = 0.5,
+    ):
+        if path.isdir(patterns):
+            self.patterns = [cv2.imread(path.join(patterns, pattern))
+                             for pattern in listdir(patterns)]
+        elif path.isfile(patterns):
+            self.patterns = [cv2.imread(patterns)]
+        self.alphas = alphas
+        self.p = p
+
+    def __call__(self, image: np.ndarray, **kw):
+        # **kw because of albumentation interface
+        if random.random() > self.p:
+            return dict(image=image, **kw)
+        alpha = random.uniform(*self.alphas)
+        pattern = random.choice(self.patterns)
+        h, w = image.shape[:2]
+        try:
+            pattern = random_crop(pattern, width=w, height=h)
+        except ValueError:
+            pattern = cv2.resize(pattern, (w, h))
+        image = image * alpha + pattern * (1 - alpha)
+        image = np.clip(image, 0, 255).round().astype('uint8')
+        return dict(image=image, **kw)
+
 
 p = 0.3
 default_augment = A.Compose([
+    PatternOverlay(patterns="vietocr/data/patterns", p=p * 2),
     # Changing image coloring
     A.OneOf([
         A.CLAHE(p=p),
