@@ -88,14 +88,19 @@ class FVTREmbedding(nn.Module):
             hidden_size=hidden_size,
             patch_size=patch_size,
             image_channel=image_channel)
-        self.position_embedding = PositionEmbedding(
-            hidden_size=hidden_size,
-            max_position_ids=max_position_ids)
+        self.max_position_ids = max_position_ids
+        if max_position_ids > 0:
+            self.position_embedding = PositionEmbedding(
+                hidden_size=hidden_size,
+                max_position_ids=max_position_ids)
 
     def forward(self, image):
         patches = self.patch_embedding(image)
-        positions = self.position_embedding(patches)
-        embeddings = positions.unsqueeze(0) + patches
+        if self.max_position_ids > 0:
+            positions = self.position_embedding(patches)
+            embeddings = positions.unsqueeze(0) + patches
+        else:
+            embeddings = patches
         return embeddings
 
 
