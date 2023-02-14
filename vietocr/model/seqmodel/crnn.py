@@ -34,7 +34,7 @@ class CRNN(nn.Module):
         x = self.rnn_1(x)
         x = self.rnn_2(x)
         if self.correction:
-            x = self.correction(x)
+            x = self.correction(x.argmax(dim=-1))
         x = x.transpose(0, 1)
         return x
 
