@@ -30,6 +30,7 @@ class VietOCR(nn.Module):
                  stn=None):
 
         super(VietOCR, self).__init__()
+        self.vocab_size = vocab_size
         self.stn = SpatialTransformer(stn)
         self.cnn = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
@@ -91,5 +92,7 @@ class VietOCR(nn.Module):
         elif self.seq_modeling == 'fcrnn':
             outputs = self.transformer(src)
         elif self.seq_modeling == 'none' or self.seq_modeling is None:
-            outputs = self.transformer(src)
+            outputs = self.transformer(src).transpose(0, 1)
+            assert outputs.shape[-1] == self.vocab_size, \
+                f"Output must be the same as vocab size ({self.vocab_size})"
         return outputs
