@@ -121,7 +121,7 @@ class Decoder(nn.Module):
         self.attn_weight = nn.Linear(hidden_size * 3, hidden_size * 2)
         self.attn_combine = nn.Linear(hidden_size * 3, hidden_size)
         self.rnn = nn.GRU(hidden_size, hidden_size, bidirectional=True)
-        self.out = nn.Linear(hidden_size, vocab_size)
+        self.out = nn.Linear(hidden_size * 2, vocab_size)
 
     def forward(self, x, memories):
         x = self.embed(x)
