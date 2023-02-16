@@ -131,6 +131,7 @@ class Decoder(nn.Module):
 
         # output: t, b, h
         attn_weights = self.attn_weight(torch.cat([x, memories], dim=-1))
+        attn_weights = F.softmax(attn_weights, dim=-1)
         attn_applied = attn_weights * memories
         output = torch.cat([x, attn_applied], dim=-1)
         output = self.attn_combine(output)
