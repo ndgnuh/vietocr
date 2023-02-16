@@ -97,3 +97,61 @@ class Correction(nn.Module):
         z = self.reparameterize(mu, sigma)
         out = self.decode(z)
         return out
+
+
+class Encoder(nn.Module):
+    def __init__(self, vocab_size: int, hidden_size: int):
+        super().__init__()
+        self.rnn = nn.GRU(hidden_size, hidden_size, bidirectional=True)
+        self.fc = nn.Linear(hidden_size * 2, vocab_size)
+
+    def forward(self, x):
+        x, memories = self.rnn(x)
+        x = self.fc(x)
+        # 2, b, h -> 1, h, b * 2
+        memories = torch.cat([memories[0], memories[1]], dim=-1)
+        return x, memories
+
+
+class Decoder(nn.Module):
+    def __init__(self, vocab_size, hidden_size):
+        super().__init__()
+        self.embed = nn.Linear(vocab_size, hidden_size)
+        self.attn_weight = nn.Linear(hidden_size * 3, hidden_size * 2)
+        self.attn_combine = nn.Linear(hidden_size * 3, hidden_size)
+        self.rnn = nn.GRU(hidden_size, hidden_size, bidirectional=True)
+        self.out = nn.Linear(hidden_size, vocab_size)
+
+    def forward(self, x, memories):
+        x = self.embed(x)
+
+        # 1, b, 2h -> t b 2h
+        memories = memories.repeat([x.shape[0], 1, 1])
+
+        # output: t, b, h
+        attn_weights = self.attn_weight(torch.cat([x, memories], dim=-1))
+        attn_applied = attn_weights * memories
+        output = torch.cat([x, attn_applied], dim=-1)
+        output = self.attn_combine(output)
+        output = F.relu(output)
+
+        # t, b, 2h -> 1, b, 2h -> 2 b h
+        hidden = attn_applied.mean(dim=0)
+        hidden = torch.stack(hidden.chunk(2, dim=-1), dim=0)
+        output, _ = self.rnn(output, hidden)
+        output = self.out(output)
+        return output
+#         x = self.embed(x.argmax(dim=-1))
+
+
+class AttnCRNN(nn.Module):
+    def __init__(self, vocab_size: int, hidden_size: int):
+        super().__init__()
+        self.encoder = Encoder(vocab_size, hidden_size)
+        self.decoder = Decoder(vocab_size, hidden_size)
+
+    def forward(self, x):
+        x, memories = self.encoder(x)
+        x = self.decoder(x, memories)
+        x = x.transpose(0, 1)
+        return x

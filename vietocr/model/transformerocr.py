@@ -4,7 +4,7 @@ from vietocr.model.seqmodel.seq2seq import Seq2Seq
 from vietocr.model.seqmodel.convseq2seq import ConvSeq2Seq
 from vietocr.model.seqmodel.rfng import RefineAndGuess
 from vietocr.model.stn import SpatialTransformer
-from .seqmodel.crnn import CRNN
+from .seqmodel.crnn import CRNN, AttnCRNN
 from torch import nn
 from torch.nn import functional as F
 
@@ -47,6 +47,8 @@ class VietOCR(nn.Module):
             self.transformer = FCRNN(vocab_size, **transformer_args)
         elif seq_modeling == 'crnn':
             self.transformer = CRNN(vocab_size, **transformer_args)
+        elif seq_modeling == 'atn-crnn':
+            self.transformer = AttnCRNN(vocab_size, **transformer_args)
         elif seq_modeling == 'none' or seq_modeling is None:
             self.transformer = FC(vocab_size, **transformer_args)
         else:
@@ -74,7 +76,7 @@ class VietOCR(nn.Module):
         if self.seq_modeling == 'transformer':
             outputs = self.transformer(
                 src, tgt_input, tgt_key_padding_mask=tgt_key_padding_mask)
-        elif self.seq_modeling == 'crnn':
+        elif self.seq_modeling.endswith('crnn'):
             outputs = self.transformer(src)
         elif self.seq_modeling == 'seq2seq':
             outputs = self.transformer(
