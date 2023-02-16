@@ -5,12 +5,14 @@ import torch
 class RNNFC(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()
-        self.rnn = nn.LSTM(input_size, hidden_size, bidirectional=True)
+        self.rnn = nn.GRU(input_size, hidden_size, bidirectional=True)
+        self.tanh = nn.Tanh()
         self.fc = nn.Linear(hidden_size * 2, output_size)
 
     def forward(self, x):
         # x: t b h
         recur, _ = self.rnn(x)
+        recur = self.tanh(recur)
         x = self.fc(recur)
         return x
 
@@ -21,7 +23,8 @@ class CRNN(nn.Module):
         vocab_size: int,
         input_size: int,
         hidden_size: int,
-        correction: bool = False
+        correction: bool = False,
+        reparam: bool = False
     ):
         super().__init__()
         self.correction = correction
@@ -30,13 +33,33 @@ class CRNN(nn.Module):
         if correction:
             self.correction = Correction(vocab_size, hidden_size)
 
+        if reparam:
+            self.reparam = Reparam(hidden_size)
+        else:
+            self.reparam = nn.Identity()
+
     def forward(self, x):
         x = self.rnn_1(x)
+        x = self.reparam(x)
         x = self.rnn_2(x)
         if self.correction:
             x = self.correction(x.argmax(dim=-1))
         x = x.transpose(0, 1)
         return x
+
+
+class Reparam(nn.Module):
+    def __init__(self, hidden_size: int):
+        super().__init__()
+        self.mu = nn.Linear(hidden_size, hidden_size)
+        self.sigma = nn.Linear(hidden_size, hidden_size)
+
+    def forward(self, x):
+        mu = self.mu(x)
+        sigma = self.sigma(x)
+        std = torch.exp(0.5 * sigma)
+        eps = torch.randn_like(std)
+        return (mu + eps*std)
 
 
 class Correction(nn.Module):
