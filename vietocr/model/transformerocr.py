@@ -50,7 +50,7 @@ class VietOCR(nn.Module):
         elif seq_modeling == 'atn-crnn':
             self.transformer = AttnCRNN(vocab_size, **transformer_args)
         elif seq_modeling == 'none' or seq_modeling is None:
-            self.transformer = FC(vocab_size, **transformer_args)
+            self.transformer = nn.Idendity()
         else:
             raise('Not Support Seq Model')
 
