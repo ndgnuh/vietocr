@@ -48,26 +48,44 @@ class PatchEmbedding(nn.Sequential):
                  hidden_size: int,
                  image_channel: int = 3,
                  patch_size: int = 4,
-                 norm_type: str = 'batchnorm'):
+                 norm_type: str = 'batchnorm',
+                 embedding_type: str = 'default'):
         super().__init__()
-        assert patch_size % 2 == 0
         assert norm_type in ['batchnorm', 'instancenorm', 'localresponse']
+        assert embedding_type in ['default', 'simple', '2x2-overlap']
         if norm_type == 'batchnorm':
             Norm = nn.BatchNorm2d
         elif norm_type == 'instancenorm':
             Norm = nn.InstanceNorm2d
         elif norm_type == 'localresponse':
             Norm = nn.LocalResponseNorm
-        self.conv1 = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size, 3, stride=patch_size // 2),
-            Norm(hidden_size),
-            nn.GELU()
-        )
-        self.conv2 = nn.Sequential(
-            nn.Conv2d(hidden_size, hidden_size, 3, stride=patch_size // 2),
-            Norm(hidden_size),
-            nn.GELU()
-        )
+
+        if embedding_type == 'default':
+            assert patch_size % 2 == 0
+            self.conv1 = nn.Sequential(
+                nn.Conv2d(image_channel, hidden_size,
+                          3, stride=patch_size // 2),
+                Norm(hidden_size),
+                nn.GELU()
+            )
+            self.conv2 = nn.Sequential(
+                nn.Conv2d(hidden_size, hidden_size, 3, stride=patch_size // 2),
+                Norm(hidden_size),
+                nn.GELU()
+            )
+        elif embedding_type == 'simple':
+            self.conv = nn.Sequential(
+                nn.Conv2d(image_channel, hidden_size,
+                          patch_size, stride=patch_size),
+                Norm(hidden_size),
+                nn.GELU()
+            )
+        elif embedding_type == '2x2-overlap':
+            self.conv = nn.Sequential(
+                nn.Conv2d(image_channel, hidden_size, 4, stride=2),
+                Norm(hidden_size),
+                nn.GELU()
+            )
 
 
 class PositionEmbedding(nn.Module):
@@ -90,14 +108,16 @@ class FVTREmbedding(nn.Module):
         image_channel: int = 3,
         patch_size: int = 4,
         max_position_ids: int = 128,
-        norm_type='batchnorm'
+        norm_type='batchnorm',
+        patch_embedding_type='default',
     ):
         super().__init__()
         self.patch_embedding = PatchEmbedding(
             hidden_size=hidden_size,
             patch_size=patch_size,
             image_channel=image_channel,
-            norm_type=norm_type
+            norm_type=norm_type,
+            embedding_type=patch_embedding_type
         )
         self.max_position_ids = max_position_ids
         if max_position_ids > 0:
@@ -279,7 +299,8 @@ class FVTR(nn.Sequential):
                  patch_size: int = 4,
                  image_channel: int = 3,
                  max_position_ids: int = 128,
-                 norm_type: str = 'batchnorm'):
+                 norm_type: str = 'batchnorm',
+                 patch_embedding_type: str = 'default'):
         super().__init__()
         self.locality = locality
         self.patch_size = patch_size
@@ -291,7 +312,9 @@ class FVTR(nn.Sequential):
             patch_size=patch_size,
             image_channel=image_channel,
             max_position_ids=max_position_ids,
-            norm_type=norm_type)
+            norm_type=norm_type,
+            patch_embedding_type=patch_embedding_type,
+        )
 
         # FVTR Stages
         stages = []
