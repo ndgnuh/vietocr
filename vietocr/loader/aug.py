@@ -1,8 +1,61 @@
 import albumentations as A
+from dataclasses import dataclass
 from os import path, listdir
+from typing import List
 import random
 import numpy as np
 import cv2
+
+
+class RandomOrderCompose:
+    def __init__(self, *a, **kw):
+        self.compose = A.Compose(*a, **kw)
+
+    def __call__(self, *a, **kw):
+        random.shuffle(self.compose.transforms)
+        return self.compose(*a, **kw)
+
+
+@dataclass
+class SequentialOneOf:
+    def __init__(self, transforms, p):
+        self.transforms = transforms
+        self.p = p
+        self.index = 0
+        self.len = len(transforms)
+
+    def __call__(self, **kw):
+        if random.uniform(0, 1) >= p:
+            return kw
+
+        transform = self.transforms[self.index]
+        output = transform(**kw)
+
+        self.index = (self.index + 1) % self.len
+        return output
+
+
+def scale_degrade(image, scale):
+    h, w = image.shape[:2]
+    image = cv2.resize(image, (int(w/scale), int(h/scale)))
+    image = cv2.resize(image, (w, h))
+    return image
+
+
+@dataclass
+class ScaleDegrade:
+    min_scale: float = 1.2
+    max_scale: float = 2.2
+    p: float = 0.5
+
+    def __call__(self, **kw):
+        scale = random.uniform(self.min_scale, self.max_scale)
+
+        image = kw['image']
+        image = scale_degrade(image, scale)
+
+        kw['image'] = image
+        return kw
 
 
 def random_crop(pattern, width, height):
@@ -18,7 +71,7 @@ class PatternOverlay:
     def __init__(
         self,
         patterns: str,
-        alphas=(0.4, 0.7),
+        alphas=(0.7, 0.9),
         p: float = 0.5,
     ):
         if path.isdir(patterns):
@@ -42,24 +95,46 @@ class PatternOverlay:
             pattern = cv2.resize(pattern, (w, h))
         image = image * alpha + pattern * (1 - alpha)
         image = np.clip(image, 0, 255).round().astype('uint8')
-        return dict(image=image, **kw)
+        kw['image'] = image
+        return kw
 
 
-p = 0.3
-default_augment = A.Compose([
-    PatternOverlay(patterns="vietocr/data/patterns", p=p * 2),
+def blur_shift(image, shift, vertical):
+    if vertical:
+        image[shift:, ...] = image[shift:, ...] * \
+            0.5 + image[:-shift, ...] * 0.5
+    else:
+        image[:, shift:, ...] = image[:, shift:, ...] * \
+            0.5 + image[:, :-shift, ...] * 0.5
+    return image
+
+
+class RandomBlurShift:
+    def __call__(self, **kw):
+        image = kw['image']
+        verticals = random.choices([True, False], k=2)
+        for shift, vertical in enumerate(verticals):
+            image = blur_shift(image, shift + 1, vertical)
+
+        kw['image'] = image
+        return kw
+
+
+p = 0.5
+default_augment = RandomOrderCompose([
+    PatternOverlay(patterns="vietocr/data/patterns", p=p),
     # Changing image coloring
-    A.OneOf([
-        A.CLAHE(p=p),
-        A.ColorJitter(p=p),
-        A.Emboss(p=p),
-        A.HueSaturationValue(p=p),
-        A.RandomBrightnessContrast(p=p),
-        A.InvertImg(p=p),
-        A.RGBShift(p=p),
-        A.ToSepia(p=p),
-        A.ToGray(p=p),
-    ]),
+    SequentialOneOf([
+        A.CLAHE(always_apply=True),
+        A.ColorJitter(always_apply=True),
+        A.Emboss(always_apply=True),
+        A.HueSaturationValue(always_apply=True),
+        A.RandomBrightnessContrast(always_apply=True),
+        A.InvertImg(always_apply=True),
+        A.RGBShift(always_apply=True),
+        A.ToSepia(always_apply=True),
+        A.ToGray(always_apply=True),
+    ], p=p),
 
     # Overlays
     # Fog, snow, sunflare are disabled
@@ -68,39 +143,43 @@ default_augment = A.Compose([
     A.RandomShadow(p=p),
 
     # Noises
-    A.OneOf([
-        A.ISONoise(p=p),
-        A.MultiplicativeNoise(p=p),
-    ]),
+    SequentialOneOf([
+        A.ISONoise(always_apply=True),
+        A.MultiplicativeNoise(always_apply=True),
+    ], p=p),
 
     # Dropouts
-    A.OneOf([
-        A.PixelDropout(p=p),
-        A.ChannelDropout(p=p),
-    ]),
+    SequentialOneOf([
+        A.PixelDropout(always_apply=True),
+        A.ChannelDropout(always_apply=True),
+    ], p=p),
 
     # Image degration
-    A.OneOf([
-        A.ImageCompression(p=p),
-        A.GaussianBlur(p=p),
-        A.Defocus(radius=(1, 3), p=p),
-        A.Posterize(p=p),
-        A.GlassBlur(sigma=0.1, max_delta=1, iterations=1, p=p),
-        A.MedianBlur(blur_limit=3, p=p),
-        A.MotionBlur(p=p),
-        A.ZoomBlur(max_factor=1.1, p=p),
-    ]),
+    SequentialOneOf([
+        A.ImageCompression(always_apply=True),
+        ScaleDegrade(p=10),
+        A.GaussianBlur(always_apply=True),
+        A.Defocus(radius=(1, 3), always_apply=True),
+        A.Posterize(always_apply=True),
+        A.GlassBlur(sigma=0.1, max_delta=1, iterations=1, always_apply=True),
+        A.MedianBlur(blur_limit=3, always_apply=True),
+        RandomBlurShift(),
+        A.MotionBlur(always_apply=True),
+        A.ZoomBlur(max_factor=1.1, always_apply=True),
+    ], p=p),
 
     # Spatial transform
-    A.OneOf([
-        A.ElasticTransform(alpha=1, sigma=1, alpha_affine=1, p=p),
-        A.Perspective(fit_output=True, p=p),
+    SequentialOneOf([
+        A.ElasticTransform(alpha=1, sigma=1, alpha_affine=1,
+                           always_apply=True),
+        A.Perspective(fit_output=True, always_apply=True),
 
-        # Removed due to bug
-        # A.PiecewiseAffine(nb_rows=3, nb_cols=3, p=p),
+        # 4/2 is divisable by the image size
+        # in hope that it will not cause any crash
+        A.PiecewiseAffine(nb_rows=4, nb_cols=2, always_apply=True),
 
         # Removed due to making the output out of range
-        # A.ShiftScaleRotate(p=p),
-        # A.SafeRotate((-10, 10), p=p),
-    ])
+        # A.ShiftScaleRotate(always_apply=True),
+        # A.SafeRotate((-10, 10), always_apply=True),
+    ], p=p),
 ])
