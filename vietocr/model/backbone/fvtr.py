@@ -47,17 +47,23 @@ class PatchEmbedding(nn.Sequential):
     def __init__(self,
                  hidden_size: int,
                  image_channel: int = 3,
-                 patch_size: int = 4):
+                 patch_size: int = 4,
+                 norm_type: str = 'batchnorm'):
         super().__init__()
         assert patch_size % 2 == 0
+        assert norm_type in ['batchnorm', 'instancenorm']
+        if norm_type == 'batchnorm':
+            Norm = nn.BatchNorm2d
+        elif norm_type == 'instancenorm':
+            Norm = nn.InstanceNorm2d
         self.conv1 = nn.Sequential(
             nn.Conv2d(image_channel, hidden_size, 3, stride=patch_size // 2),
-            nn.BatchNorm2d(hidden_size),
+            Norm(hidden_size),
             nn.GELU()
         )
         self.conv2 = nn.Sequential(
             nn.Conv2d(hidden_size, hidden_size, 3, stride=patch_size // 2),
-            nn.BatchNorm2d(hidden_size),
+            Norm(hidden_size),
             nn.GELU()
         )
 
@@ -81,13 +87,16 @@ class FVTREmbedding(nn.Module):
         hidden_size: int,
         image_channel: int = 3,
         patch_size: int = 4,
-        max_position_ids: int = 128
+        max_position_ids: int = 128,
+        norm_type='batchnorm'
     ):
         super().__init__()
         self.patch_embedding = PatchEmbedding(
             hidden_size=hidden_size,
             patch_size=patch_size,
-            image_channel=image_channel)
+            image_channel=image_channel,
+            norm_type=norm_type
+        )
         self.max_position_ids = max_position_ids
         if max_position_ids > 0:
             self.position_embedding = PositionEmbedding(
@@ -267,7 +276,8 @@ class FVTR(nn.Sequential):
                  locality: Tuple[int, int] = (7, 11),
                  patch_size: int = 4,
                  image_channel: int = 3,
-                 max_position_ids: int = 128):
+                 max_position_ids: int = 128,
+                 norm_type: str = 'batchnorm'):
         super().__init__()
         self.locality = locality
         self.patch_size = patch_size
@@ -278,7 +288,8 @@ class FVTR(nn.Sequential):
             hidden_size=hidden_sizes[0],
             patch_size=patch_size,
             image_channel=image_channel,
-            max_position_ids=max_position_ids)
+            max_position_ids=max_position_ids,
+            norm_type=norm_type)
 
         # FVTR Stages
         stages = []
@@ -349,6 +360,19 @@ def fvtr_t(output_size, **opts):
         **opts)
 
 
+def fvtr_tg(output_size, **opts):
+    G = True
+    permutations = create_permutation([G] * 6 + [G] * 6, [3, 6, 3])
+    heads = [2, 4, 8]
+    hidden_sizes = [64, 128, 256, 192]
+    return FVTR(
+        output_size=output_size,
+        permutations=permutations,
+        num_attention_heads=heads,
+        hidden_sizes=hidden_sizes,
+        **opts)
+
+
 def fvtr_s(output_size, **opts):
     # Models | [D0, D1, D2]    | [L1, L2, L3] | Heads      | D3  | Permutation
     # ---    | ---             | ---          | ---        | --- | ---
@@ -399,6 +423,7 @@ def fvtr_l(output_size, **opts):
 
 models = {
     "fvtr_t": fvtr_t,
+    "fvtr_tg": fvtr_tg,
     "fvtr_s": fvtr_s,
     "fvtr_b": fvtr_b,
     "fvtr_l": fvtr_l
