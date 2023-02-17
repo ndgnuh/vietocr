@@ -97,7 +97,9 @@ class Trainer(LightningLite):
         self.validate_every = training_config['validate_every']
         if isinstance(self.validate_every, float):
             self.validate_every = int(self.total_steps * self.validate_every)
-        self.print_every = max(self.validate_every // 5, 1)
+        self.print_every = training_config.get(
+            'print_every',
+            max(self.validate_every // 5, 1))
         self.tfs = TeacherForcingScheduler(
             start_step=training_config.get('teacher_forcing_start', 0),
             end_step=training_config.get(
@@ -150,6 +152,8 @@ class Trainer(LightningLite):
 
     def run(self):
         train_data = self.setup_dataloaders(self.train_data)
+        print("Number of training batches:", len(train_data))
+        print("Number of validation batches:", len(self.validate_data))
         model, optimizer = self.setup(self.model, self.optimizer)
 
         metrics = {}
