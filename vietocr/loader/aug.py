@@ -176,7 +176,8 @@ default_augment = RandomOrderCompose([
 
         # 4/2 is divisable by the image size
         # in hope that it will not cause any crash
-        A.PiecewiseAffine(nb_rows=4, nb_cols=2, always_apply=True),
+        # Still crash
+        # A.PiecewiseAffine(nb_rows=4, nb_cols=2, always_apply=True),
 
         # Removed due to making the output out of range
         # A.ShiftScaleRotate(always_apply=True),
