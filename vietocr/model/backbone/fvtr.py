@@ -51,11 +51,13 @@ class PatchEmbedding(nn.Sequential):
                  norm_type: str = 'batchnorm'):
         super().__init__()
         assert patch_size % 2 == 0
-        assert norm_type in ['batchnorm', 'instancenorm']
+        assert norm_type in ['batchnorm', 'instancenorm', 'localresponse']
         if norm_type == 'batchnorm':
             Norm = nn.BatchNorm2d
         elif norm_type == 'instancenorm':
             Norm = nn.InstanceNorm2d
+        elif norm_type == 'localresponse':
+            Norm = nn.LocalResponseNorm
         self.conv1 = nn.Sequential(
             nn.Conv2d(image_channel, hidden_size, 3, stride=patch_size // 2),
             Norm(hidden_size),
