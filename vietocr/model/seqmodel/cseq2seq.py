@@ -2,11 +2,9 @@ from torch import nn
 import torch
 import random
 
-TF = (True, False)
 
-
-def flip():
-    return random.choice(TF)
+def flip(p):
+    return random.uniform(0, 1) <= (p - 1e-12)
 
 
 class EncoderRNN(nn.Module):
@@ -82,10 +80,10 @@ class ReZeroCorrectionSeq2Seq(nn.Module):
         self.dec = DecoderRNN(vocab_size, hidden_size)
         self.alpha = nn.Parameter(torch.tensor(-1e12))
 
-    def forward(self, x):
+    def forward(self, x, orignal_forcing=False):
         # Train on the original output with 50%
         # ensure that it is somewhat legit OCR outputs too
-        if self.training and flip():
+        if self.training and flip(orignal_forcing):
             x = x.transpose(0, 1)
             return x
 

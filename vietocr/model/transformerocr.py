@@ -83,7 +83,7 @@ class VietOCR(nn.Module):
             outputs = self.transformer(
                 src, tgt_input, tgt_key_padding_mask=tgt_key_padding_mask)
         elif self.seq_modeling.endswith('none-seq2seq'):
-            outputs = self.transformer(src)
+            outputs = self.transformer(src, original_forcing=False)
         elif self.seq_modeling.endswith('crnn'):
             outputs = self.transformer(src)
         elif self.seq_modeling == 'seq2seq':
