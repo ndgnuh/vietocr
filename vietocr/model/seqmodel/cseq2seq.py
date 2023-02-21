@@ -80,10 +80,10 @@ class ReZeroCorrectionSeq2Seq(nn.Module):
         self.dec = DecoderRNN(vocab_size, hidden_size)
         self.alpha = nn.Parameter(torch.tensor(-1e12))
 
-    def forward(self, x, orignal_forcing=False):
+    def forward(self, x, original_forcing=False):
         # Train on the original output with 50%
         # ensure that it is somewhat legit OCR outputs too
-        if self.training and flip(orignal_forcing):
+        if self.training and flip(original_forcing):
             x = x.transpose(0, 1)
             return x
 
