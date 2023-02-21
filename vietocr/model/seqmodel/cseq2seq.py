@@ -86,6 +86,7 @@ class ReZeroCorrectionSeq2Seq(nn.Module):
         # Train on the original output with 50%
         # ensure that it is somewhat legit OCR outputs too
         if self.training and flip():
+            x = x.transpose(0, 1)
             return x
 
         input_ids = x.argmax(dim=-1)
