@@ -6,7 +6,7 @@ TF = (True, False)
 
 
 def flip():
-    return random.chocie(TF)
+    return random.choice(TF)
 
 
 class EncoderRNN(nn.Module):
