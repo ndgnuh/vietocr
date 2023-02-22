@@ -1,3 +1,15 @@
+from ..loader.dataloader import build_dataloader
+from ..loader.aug import default_augment
+from ..tool.utils import compute_accuracy
+from ..tool.stats import (
+    AverageStatistic,
+    MaxStatistic,
+    TotalTimer,
+    AverageTimer
+)
+from ..tool.translate import build_model
+from .. import const
+from . import losses
 from pytorch_lightning.lite import LightningLite
 from functools import partial
 from torch import nn, optim
@@ -7,19 +19,11 @@ from os import path
 from dataclasses import dataclass
 import torch
 import random
+import os
 
-from . import losses
-from .. import const
-from ..tool.translate import build_model
-from ..tool.stats import (
-    AverageStatistic,
-    MaxStatistic,
-    TotalTimer,
-    AverageTimer
-)
-from ..tool.utils import compute_accuracy
-from ..loader.aug import default_augment
-from ..loader.dataloader import build_dataloader
+# fix: https://github.com/ndgnuh/vietocr/issues/2
+# ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
+os.environment['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
 def cycle(total_steps, dataloader):
