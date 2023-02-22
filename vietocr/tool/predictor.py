@@ -14,7 +14,7 @@ class Predictor:
         self.image_max_width = config['image_max_width']
 
     @torch.no_grad()
-    def __call__(self, images):
+    def __call__(self, images, prob_threshold: float = 0.75):
         device = next(self.model.parameters()).device
         if not isinstance(images, (tuple, list)):
             images = [images]
@@ -28,4 +28,7 @@ class Predictor:
         images = images.to(device)
         output = self.model(images)
         output = output.cpu().detach()
-        return self.vocab.batch_decode(output.argmax(dim=-1).tolist())
+        probs, indices = torch.softmax(output, dim=-1).max(dim=-1)
+        results = self.vocab.batch_decode(indices.tolist())
+        scores = probs[probs > prob_threshold].sum(dim=-1) / probs.shape[-1]
+        return results, scores
