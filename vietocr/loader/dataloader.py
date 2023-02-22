@@ -156,7 +156,12 @@ class OCRDataset(Dataset):
 
         img_path = os.path.join(self.root_dir, img_path)
 
-        sample = {'img': img, 'word': word, 'img_path': img_path}
+        sample = {
+            'img': img,
+            'word': word,
+            'img_path': img_path,
+            'target_length': len(word)
+        }
 
         return sample
 
@@ -257,6 +262,9 @@ class Collator(object):
 
         image = torch.FloatTensor(img)
         target = torch.LongTensor(tgt_output)
+        target_lengths = torch.tensor(
+            [sample['target_length'] for sample in batch]
+        )
         # rs = {
         #     'img': image,
         #     'tgt_input': torch.LongTensor(tgt_input),
@@ -265,7 +273,7 @@ class Collator(object):
         #     'filenames': filenames
         # }
 
-        return image, target
+        return image, target, target_lengths
 
 
 def get_lbdm_path(annotation_path: str):

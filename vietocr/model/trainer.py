@@ -36,9 +36,9 @@ def cycle(total_steps, dataloader):
 def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
     model.train()
     optimizer.zero_grad()
-    images, labels = batch
+    images, labels, target_lengths = batch
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
-    loss = criterion(outputs, labels)
+    loss = criterion(outputs, labels, target_lengths)
     lite.backward(loss)
     optimizer.step()
     return loss
@@ -52,10 +52,10 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.0
     for p in model.parameters():
         p.requires_grad = False
     optimizer.zero_grad()
-    images, labels = batch
+    images, labels, target_lengths = batch
     images.requires_grad = True
     outputs = model(images, labels)
-    loss = criterion(outputs, labels)
+    loss = criterion(outputs, labels, target_lengths)
     loss.backward()
     data_grad = images.grad
     for p in model.parameters():
@@ -72,7 +72,7 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.0
     # Train on perturbed image
     optimizer.zero_grad()
     outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
-    loss = criterion(outputs, labels) * 0.05
+    loss = criterion(outputs, labels, target_lengths) * 0.05
     lite.backward(loss)
     optimizer.step()
     return loss
@@ -247,11 +247,13 @@ class Trainer(LightningLite):
         all_gts = []
         all_prs = []
 
-        for images, labels in tqdm(data, desc="Validating", dynamic_ncols=True):
+        for batch in tqdm(data, desc="Validating", dynamic_ncols=True):
+            images, labels, target_lengths = batch
+
             outputs = model(images, labels)
 
             # Validation loss
-            loss = criterion(outputs, labels).item()
+            loss = criterion(outputs, labels, target_lengths).item()
             val_loss.append(loss)
 
             # Validation accuracies

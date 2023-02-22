@@ -18,7 +18,7 @@ class CTCLoss(nn.Module):
         self.ctc = nn.CTCLoss(*a, **k)
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, outputs, targets):
+    def forward(self, outputs, targets, target_lengths):
         # outputs: [batch, time, class]
         # targets: [batch, max_length]
 
@@ -29,7 +29,7 @@ class CTCLoss(nn.Module):
         logits = self.log_softmax(outputs)
 
         # target_lengths: [batch]
-        target_lengths = torch.count_nonzero(targets != self.ctc.blank, dim=1)
+        # target_lengths = torch.count_nonzero(targets != self.ctc.blank, dim=1)
 
         # input_lengths: [batch]
         # use time * batch for now
@@ -50,7 +50,7 @@ class CrossEntropyLoss(nn.Module):
         k.setdefault("ignore_index", vocab.pad_id)
         self.loss = nn.CrossEntropyLoss(*a, **k)
 
-    def forward(self, outputs, targets):
+    def forward(self, outputs, targets, target_lengths):
         # outputs: [batch, time, num_class]
         # targets: [num_class, batch]
 
