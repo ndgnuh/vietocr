@@ -23,7 +23,7 @@ import os
 
 # fix: https://github.com/ndgnuh/vietocr/issues/2
 # ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
-os.environment['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
+os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
 def cycle(total_steps, dataloader):
