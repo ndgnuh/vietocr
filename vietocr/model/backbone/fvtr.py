@@ -63,26 +63,34 @@ class PatchEmbedding(nn.Sequential):
         if embedding_type == 'default':
             assert patch_size % 2 == 0
             self.conv1 = nn.Sequential(
-                nn.Conv2d(image_channel, hidden_size,
-                          3, stride=patch_size // 2),
+                nn.Conv2d(image_channel,
+                          hidden_size,
+                          kernel_size=(3, 1),
+                          stride=(2, 1),
+                          bias=False),
                 Norm(hidden_size),
                 nn.GELU()
             )
             self.conv2 = nn.Sequential(
-                nn.Conv2d(hidden_size, hidden_size, 3, stride=patch_size // 2),
+                nn.Conv2d(hidden_size,
+                          hidden_size,
+                          kernel_size=3,
+                          stride=2,
+                          bias=False),
                 Norm(hidden_size),
                 nn.GELU()
             )
         elif embedding_type == 'simple':
             self.conv = nn.Sequential(
                 nn.Conv2d(image_channel, hidden_size,
-                          patch_size, stride=patch_size),
+                          patch_size, stride=patch_size,
+                          bias=False),
                 Norm(hidden_size),
                 nn.GELU()
             )
         elif embedding_type == '2x2-overlap':
             self.conv = nn.Sequential(
-                nn.Conv2d(image_channel, hidden_size, 4, stride=2),
+                nn.Conv2d(image_channel, hidden_size, 4, stride=2, bias=False),
                 Norm(hidden_size),
                 nn.GELU()
             )
@@ -147,7 +155,8 @@ class CombiningBlock(nn.Sequential):
 class MergingBlock(nn.Sequential):
     def __init__(self, input_size, output_size):
         super().__init__()
-        conv = nn.Conv2d(input_size, output_size, 3, padding=1, stride=(2, 1))
+        conv = nn.Conv2d(input_size, output_size, 3,
+                         padding=1, stride=(2, 1), bias=False)
         c_last = Rearrange("b c h w -> b h w c")
         ln = nn.LayerNorm(output_size)
         c_first = Rearrange("b h w c -> b c h w")
@@ -209,7 +218,7 @@ class MixerBlock(nn.Module):
         local: bool = False,
         attn_dropout: float = 0.,
         dropout: float = 0.,
-        prelayer_norm: bool = True
+        prelayer_norm: bool = False
     ):
         super().__init__()
         self.prelayer_norm = prelayer_norm
