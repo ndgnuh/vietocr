@@ -221,59 +221,36 @@ class ClusterRandomSampler(Sampler):
 
 
 class Collator(object):
-    def __init__(self, masked_language_model=True):
-        self.masked_language_model = masked_language_model
+    def __init__(
+        self,
+        shift_target=False,
+        pad_index=0
+    ):
+        self.shift_target = shift_target
+        self.pad = [pad_index]
 
     def __call__(self, batch):
-        img = []
-        target_weights = []
-        tgt_input = []
-        max_label_len = max(len(sample['word']) for sample in batch)
+        images = []
+        targets = []
+        target_lengths = [sample['target_length'] for sample in batch]
+        max_length = max(target_lengths)
         for sample in batch:
-            img.append(sample['img'])
-            label = sample['word']
-            label_len = len(label)
+            images.append(sample['img'])
+            target = sample['word']
+            target_length = sample['target_length']
+            target.extend(self.pad * (max_length - target_length))
+            targets.append(target)
 
-            tgt = np.concatenate((
-                label,
-                np.zeros(max_label_len - label_len, dtype=np.int32)))
-            tgt_input.append(tgt)
+        # Shift outputs for S2S
+        targets = np.array(targets)
+        if self.shift_target:
+            targets = np.roll(targets.T, -1, 0).T
+            targets[:, -1] = 0
 
-            one_mask_len = label_len - 1
-
-            target_weights.append(np.concatenate((
-                np.ones(one_mask_len, dtype=np.float32),
-                np.zeros(max_label_len - one_mask_len, dtype=np.float32))))
-
-        img = np.array(img, dtype=np.float32)
-
-        tgt_input = np.array(tgt_input, dtype=np.int64).T
-        tgt_output = np.roll(tgt_input, -1, 0).T
-        tgt_output[:, -1] = 0
-
-        # random mask token
-        if self.masked_language_model:
-            mask = np.random.random(size=tgt_input.shape) < 0.05
-            mask = mask & (tgt_input != 0) & (
-                tgt_input != 1) & (tgt_input != 2)
-            tgt_input[mask] = 3
-
-        # tgt_padding_mask = np.array(target_weights) == 0
-
-        image = torch.FloatTensor(img)
-        target = torch.LongTensor(tgt_output)
-        target_lengths = torch.tensor(
-            [sample['target_length'] for sample in batch]
-        )
-        # rs = {
-        #     'img': image,
-        #     'tgt_input': torch.LongTensor(tgt_input),
-        #     'tgt_output': target,
-        #     'tgt_padding_mask': torch.BoolTensor(tgt_padding_mask),
-        #     'filenames': filenames
-        # }
-
-        return image, target, target_lengths
+        images = torch.FloatTensor(np.array(images))
+        targets = torch.LongTensor(targets)
+        target_lengths = torch.LongTensor(np.array(target_lengths))
+        return images, targets, target_lengths
 
 
 def get_lbdm_path(annotation_path: str):
@@ -296,7 +273,8 @@ def build_dataloader(
     batch_size: Optional[int] = 1,
     num_workers: Optional[int] = None,
     curriculum: Optional[bool] = True,
-    letterbox: Optional[bool] = False
+    letterbox: Optional[bool] = False,
+    shift_target: Optional[bool] = False
 ):
     dataset = OCRDataset(annotation_path=annotation_path,
                          vocab=vocab,
@@ -312,7 +290,7 @@ def build_dataloader(
         shuffle=shuffle,
         curriculum=curriculum
     )
-    collate_fn = Collator()
+    collate_fn = Collator(shift_target=shift_target)
 
     dataloader = DataLoader(
         dataset,
