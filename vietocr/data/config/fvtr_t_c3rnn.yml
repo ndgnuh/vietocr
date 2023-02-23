@@ -2,7 +2,7 @@
 vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
 type: ctc
 
-weights: https://github.com/ndgnuh/vietocr/releases/download/0.4.8/fvtr_t.pth
+weights: https://github.com/ndgnuh/vietocr/releases/download/0.4.8/fvtr_t_c3rnn.pth
 
 backbone: fvtr_t
 cnn:
@@ -10,12 +10,11 @@ cnn:
   max_position_ids: 0
   norm_type: instancenorm
 
-seq_modeling: none
-transformer: {}
+seq_modeling: c3rnn
+transformer:
+  hidden_size: 192
 
 image_height: 32
 image_min_width: 48
-image_max_width: 512
+image_max_width: 768
 image_letterbox: false
-
-
