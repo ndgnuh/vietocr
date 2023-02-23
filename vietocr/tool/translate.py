@@ -10,6 +10,22 @@ from vietocr.model.beam import Beam
 from . import utils
 
 
+def loosely_load_state_dict(model, sd):
+    orig_sd = model.state_dict()
+    for key, value in sd.items():
+        if key not in orig_sd:
+            continue
+
+        orig_value = orig_sd[key]
+        if orig_value.shape != value.shape:
+            continue
+
+        orig_sd[key] = value
+
+    model.load_state_dict(orig_sd)
+    return model
+
+
 def batch_translate_beam_search(img, model, beam_size=4, candidates=1, max_seq_length=128, sos_token=1, eos_token=2):
     # img: NxCxHxW
     model.eval()
@@ -179,7 +195,7 @@ def build_model(config, move_to_device=True):
                     stn=config.get('stn', None))
     if 'weights' in config:
         weights = load_weights(config['weights'])
-        errors = model.load_state_dict(weights, strict=False)
+        errors = loosely_load_state_dict(model, weights)
         errors = '\n'.join([
             f'\t{k}' for k in
             (errors.missing_keys + errors.unexpected_keys)
