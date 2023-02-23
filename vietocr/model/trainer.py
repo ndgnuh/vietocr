@@ -148,6 +148,13 @@ class Trainer(LightningLite):
             pct_start=0.1,
         )
 
+        # Freezing
+        frozen = training_config.get("freeze", [])
+        if len(frozen) > 0:
+            for name, param in model.named_parameters():
+                if name in frozen:
+                    param.requires_grad = False
+
         # Dataloaders
         build_dataloader_ = partial(
             build_dataloader,
