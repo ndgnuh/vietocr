@@ -23,7 +23,7 @@ import os
 
 # fix: https://github.com/ndgnuh/vietocr/issues/2
 # ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
-os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
+# os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
 def cycle(total_steps, dataloader):
@@ -39,7 +39,7 @@ def cycle(total_steps, dataloader):
 
 def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
     model.train()
-    optimizer.zero_grad()
+    optimizer.zero_grad(set_to_none=True)
     images, labels, target_lengths = batch
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
@@ -180,63 +180,77 @@ class Trainer(LightningLite):
         pbar = trange(1, self.total_steps + 1,
                       desc="Training",
                       dynamic_ncols=True)
-        for step, batch in cycle(self.total_steps, train_data):
-            pbar.update(1)
+        data_gen = cycle(self.total_steps, train_data)
+        previouse_w = None
+        step = 0
+        while step < self.total_steps:
+            while True:
+                step, batch = next(data_gen)
+                w = batch[0].shape[-1]  # image width
 
-            # Training step
-            with gpu_time:
-                teacher_forcing = tf_scheduler.step()
-                loss = basic_train_step(
-                    self,
-                    model,
-                    batch,
-                    optimizer=optimizer,
-                    criterion=criterion,
-                    teacher_forcing=teacher_forcing,
-                )
-                # adversarial_train_step(
-                #     self,
-                #     model,
-                #     batch,
-                #     optimizer=optimizer,
-                #     criterion=criterion,
-                #     teacher_forcing=teacher_forcing,
-                # )
-            train_loss.append(loss.item())
+                # Training step
+                with gpu_time:
+                    teacher_forcing = tf_scheduler.step()
+                    loss = basic_train_step(
+                        self,
+                        model,
+                        batch,
+                        optimizer=optimizer,
+                        criterion=criterion,
+                        teacher_forcing=teacher_forcing,
+                    )
+                    # adversarial_train_step(
+                    #     self,
+                    #     model,
+                    #     batch,
+                    #     optimizer=optimizer,
+                    #     criterion=criterion,
+                    #     teacher_forcing=teacher_forcing,
+                    # )
+                train_loss.append(loss.item())
 
-            lr_scheduler.step()
+                lr_scheduler.step()
 
-            if step % validate_every == 0:
-                metrics = self.validate()
-                info = (
-                    f"Validating",
-                    f"Loss: {metrics['val_loss']:.3f}",
-                    f"Full seq: {metrics['full_seq']:.3f}",
-                    f"Per char: {metrics['per_char']:.3f}",
-                )
+                if step % validate_every == 0:
+                    metrics = self.validate()
+                    info = (
+                        f"Validating",
+                        f"Loss: {metrics['val_loss']:.3f}",
+                        f"Full seq: {metrics['full_seq']:.3f}",
+                        f"Per char: {metrics['per_char']:.3f}",
+                    )
 
-                tqdm.write(" - ".join(info))
+                    tqdm.write(" - ".join(info))
 
-                # Check if new best
-                new_best = best_full_seq.append(metrics['full_seq'])
-                if new_best:
-                    torch.save(model.state_dict(), self.output_weights_path)
-                    tqdm.write(
-                        f"Model weights saved to {self.output_weights_path}")
+                    # Check if new best
+                    new_best = best_full_seq.append(metrics['full_seq'])
+                    if new_best:
+                        torch.save(model.state_dict(),
+                                   self.output_weights_path)
+                        tqdm.write(
+                            f"Model weights saved to {self.output_weights_path}")
 
-            if step % print_every == 0:
-                mean_train_loss = train_loss.summarize()
-                lr = optimizer.param_groups[0]['lr']
+                if step % print_every == 0:
+                    mean_train_loss = train_loss.summarize()
+                    lr = optimizer.param_groups[0]['lr']
 
-                info = (
-                    f"Training: {step}/{self.total_steps}",
-                    f"Loss: {mean_train_loss:.3f}",
-                    f"LR: {lr:.1e}",
-                    f"TFR: {tf_scheduler.current_ratio():.2f}",
-                    f"Best full seq: {best_full_seq.summarize():.2f}",
-                    f"GPU time: {gpu_time.summarize():.2f}s",
-                )
-                tqdm.write(" - ".join(info))
+                    info = (
+                        f"Training: {step}/{self.total_steps}",
+                        f"Loss: {mean_train_loss:.3f}",
+                        f"LR: {lr:.1e}",
+                        f"TFR: {tf_scheduler.current_ratio():.2f}",
+                        f"Best full seq: {best_full_seq.summarize():.2f}",
+                        f"GPU time: {gpu_time.summarize():.2f}s",
+                        f"Width: {batch[0].shape[-1]}",
+                    )
+                    tqdm.write(" - ".join(info))
+                pbar.update(1)
+
+                # Break from inner loop
+                if previouse_w != w:
+                    torch.cuda.empty_cache()
+                    previouse_w = w
+                    break
 
     @torch.no_grad()
     def validate(self):
@@ -252,6 +266,7 @@ class Trainer(LightningLite):
         all_gts = []
         all_prs = []
 
+        torch.cuda.empty_cache()
         for batch in tqdm(data, desc="Validating", dynamic_ncols=True):
             images, labels, target_lengths = batch
 
@@ -288,6 +303,7 @@ class Trainer(LightningLite):
             full_seq=full_seq.summarize(),
             per_char=per_char.summarize(),
         )
+        torch.cuda.empty_cache()
         return metrics
 
     def train(self):
