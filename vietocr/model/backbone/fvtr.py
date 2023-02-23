@@ -82,11 +82,11 @@ class PatchEmbedding(nn.Sequential):
         elif embedding_type == "4x3":
             self.patch_embed = nn.Sequential(
                 nn.Conv2d(image_channel, hidden_size,
-                          kernel_size=(3, 1), stride=(2, 1), bias=False),
+                          kernel_size=(3, 4), stride=(2, 3), bias=False),
                 Norm(hidden_size),
                 nn.GELU(),
                 nn.Conv2d(hidden_size, hidden_size,
-                          kernel_size=(3, 4), stride=(2, 3), bias=False),
+                          kernel_size=(2, 1), stride=(2, 1), bias=False),
                 Norm(hidden_size),
                 nn.GELU(),
             )
