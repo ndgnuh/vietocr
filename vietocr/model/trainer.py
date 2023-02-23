@@ -151,11 +151,12 @@ class Trainer(LightningLite):
         # Freezing
         frozen = training_config.get("freeze", [])
         if len(frozen) > 0:
+            print("=" * 10 + " Freezing params " + "=" * 10)
             for name, param in self.model.named_parameters():
                 for fname in frozen:
-                    if fname.startswith(name):
+                    if name.startswith(fname):
                         param.requires_grad = False
-                        print(f"Freezing {name}")
+                        print(f"\t* Freezing {name}")
 
         # Dataloaders
         build_dataloader_ = partial(
