@@ -151,7 +151,7 @@ class Trainer(LightningLite):
         # Freezing
         frozen = training_config.get("freeze", [])
         if len(frozen) > 0:
-            for name, param in model.named_parameters():
+            for name, param in self.model.named_parameters():
                 if name in frozen:
                     param.requires_grad = False
                     print(f"Freezing {name}")
