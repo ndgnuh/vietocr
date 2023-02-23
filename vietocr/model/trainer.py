@@ -26,6 +26,15 @@ import os
 # os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
+def get_logger(log_dir):
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+        return SummaryWriter(log_dir=log_dir)
+    except Exception:
+        print("Install tensorboard to log")
+        return None
+
+
 def cycle(total_steps, dataloader):
     step = 0
     while True:
@@ -94,7 +103,12 @@ class Trainer(LightningLite):
         # Checkpoint and saving
         self.name = config['name']
         self.output_weights_path = path.join(
-            const.weight_dir, self.name + ".pth")
+            const.weight_dir,
+            f"{self.name}.pth"
+        )
+        self.logger = get_logger(
+            path.join(const.log_dir, self.name)
+        )
 
         # Scheduling stuffs
         self.total_steps = training_config['total_steps']
@@ -183,6 +197,8 @@ class Trainer(LightningLite):
         data_gen = cycle(self.total_steps, train_data)
         previouse_w = None
         step = 0
+        # Use two loops to release CUDA cache
+        # when the image width is changed
         while step < self.total_steps:
             while True:
                 step, batch = next(data_gen)
@@ -213,6 +229,8 @@ class Trainer(LightningLite):
 
                 if step % validate_every == 0:
                     metrics = self.validate()
+                    for k, v in metrics.items():
+                        self.log(f"val/{k}", v, step)
                     info = (
                         f"Validating",
                         f"Loss: {metrics['val_loss']:.3f}",
@@ -229,6 +247,12 @@ class Trainer(LightningLite):
                                    self.output_weights_path)
                         tqdm.write(
                             f"Model weights saved to {self.output_weights_path}")
+
+                lr = optimizer.param_groups[0]['lr']
+                self.log("lr", lr, step)
+                self.log("loss/train", loss.item(), step)
+                self.log("teacher-forcing", tf_scheduler.current_ratio(), step)
+                self.log("image width", w, step)
 
                 if step % print_every == 0:
                     mean_train_loss = train_loss.summarize()
@@ -264,6 +288,12 @@ class Trainer(LightningLite):
                     torch.cuda.empty_cache()
                     previouse_w = w
                     break
+
+    def log(self, tag, value, step):
+        logger = self.logger
+        if logger is None:
+            return
+        logger.add_scalar(tag, value, step)
 
     @torch.no_grad()
     def validate(self):
