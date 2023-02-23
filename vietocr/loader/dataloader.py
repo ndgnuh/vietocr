@@ -1,7 +1,7 @@
 from ..tool import utils
 from .. import const
 from os import path
-from typing import Optional, Callable
+from typing import Optional, Callable, Union, List
 from vietocr.tool.translate import resize
 from vietocr.tool.create_dataset import createDataset
 from vietocr.tool.translate import process_image
@@ -34,6 +34,39 @@ def letterbox_image(image, size):
     new_image = Image.new('RGB', size, (128, 128, 128))
     new_image.paste(image, ((w-nw)//2, (h-nh)//2))
     return new_image
+
+
+class DatasetMuxer(Dataset):
+    def __init__(self, datasets):
+        super().__init__()
+        self.datasets = datasets
+        self.lens = [len(d) for d in datasets]
+        self.current_idx = 0
+        self.num_dataset = len(datasets)
+        self.samples = []
+        self.reverse_samples = dict()
+        count = 0
+        for (dataset_idx, num_data) in enumerate(self.lens):
+            for data_idx in range(num_data):
+                self.samples.append((dataset_idx, data_idx))
+                self.reverse_samples[(dataset_idx, data_idx)] = count
+                count += 1
+
+        self.cluster_indices = defaultdict(list)
+        pbar = tqdm(range(len(self)), "Building muxer cluster indices")
+        for dataset_idx, dataset in enumerate(datasets):
+            for bucket_idx, data_indices in dataset.cluster_indices.items():
+                for data_idx in data_indices:
+                    sample_idx = self.reverse_samples[(dataset_idx, data_idx)]
+                    self.cluster_indices[bucket_idx].append(sample_idx)
+                    pbar.update(1)
+
+    def __len__(self):
+        return sum(self.lens)
+
+    def __getitem__(self, idx):
+        dataset_idx, data_idx = self.samples[idx]
+        return self.datasets[dataset_idx][data_idx]
 
 
 class OCRDataset(Dataset):
@@ -263,6 +296,17 @@ def get_lbdm_path(annotation_path: str):
     return path.join(const.lmdb_dir, lmdb_name)
 
 
+def get_dataset(annotation_paths: Union[str, List[str]], **k):
+    if isinstance(annotation_paths, str):
+        return OCRDataset(annotation_paths, **k)
+    else:
+        datasets = [
+            OCRDataset(annotation_path, **k)
+            for annotation_path in annotation_paths
+        ]
+        return DatasetMuxer(datasets)
+
+
 def build_dataloader(
     annotation_path: str,
     image_height: int,
@@ -277,13 +321,13 @@ def build_dataloader(
     letterbox: Optional[bool] = False,
     shift_target: Optional[bool] = False
 ):
-    dataset = OCRDataset(annotation_path=annotation_path,
-                         vocab=vocab,
-                         transform=transform,
-                         image_height=image_height,
-                         image_min_width=image_min_width,
-                         image_max_width=image_max_width,
-                         letterbox=letterbox)
+    dataset = get_dataset(annotation_paths=annotation_path,
+                          vocab=vocab,
+                          transform=transform,
+                          image_height=image_height,
+                          image_min_width=image_min_width,
+                          image_max_width=image_max_width,
+                          letterbox=letterbox)
 
     sampler = ClusterRandomSampler(
         dataset,
