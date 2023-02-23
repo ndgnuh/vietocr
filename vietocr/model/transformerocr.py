@@ -2,10 +2,9 @@ from vietocr.model.backbone.cnn import CNN
 from vietocr.model.seqmodel.transformer import LanguageTransformer
 from vietocr.model.seqmodel.seq2seq import Seq2Seq
 from vietocr.model.seqmodel.convseq2seq import ConvSeq2Seq
-from vietocr.model.seqmodel.rfng import RefineAndGuess
 from vietocr.model.seqmodel.c3rnn import C3RNN
 from vietocr.model.stn import SpatialTransformer
-from .seqmodel.crnn import CRNN, AttnCRNN
+from .seqmodel.crnn import CRNN
 from torch import nn
 from torch.nn import functional as F
 
@@ -51,8 +50,6 @@ class VietOCR(nn.Module):
             self.transformer = FCRNN(vocab_size, **transformer_args)
         elif seq_modeling == 'crnn':
             self.transformer = CRNN(vocab_size, **transformer_args)
-        elif seq_modeling == 'atn-crnn':
-            self.transformer = AttnCRNN(vocab_size, **transformer_args)
         elif seq_modeling == 'none' or seq_modeling is None:
             self.transformer = nn.Identity()
         else:
@@ -92,10 +89,6 @@ class VietOCR(nn.Module):
             )
         elif self.seq_modeling == 'convseq2seq':
             outputs = self.transformer(src, tgt_input)
-        elif self.seq_modeling == 'rfng':
-            outputs = self.transformer(src)
-        elif self.seq_modeling == 'fcrnn':
-            outputs = self.transformer(src)
         elif self.seq_modeling == 'none' or self.seq_modeling is None:
             outputs = self.transformer(src).transpose(0, 1)
             assert outputs.shape[-1] == self.vocab_size, \
