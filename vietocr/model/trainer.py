@@ -248,6 +248,19 @@ class Trainer(LightningLite):
 
                 # Break from inner loop
                 if previouse_w != w:
+                    mean_train_loss = train_loss.summarize()
+                    lr = optimizer.param_groups[0]['lr']
+
+                    info = (
+                        f"Training: {step}/{self.total_steps}",
+                        f"Loss: {mean_train_loss:.3f}",
+                        f"LR: {lr:.1e}",
+                        f"TFR: {tf_scheduler.current_ratio():.2f}",
+                        f"Best full seq: {best_full_seq.summarize():.2f}",
+                        f"GPU time: {gpu_time.summarize():.2f}s",
+                        f"Width: {batch[0].shape[-1]}",
+                    )
+                    tqdm.write(" - ".join(info))
                     torch.cuda.empty_cache()
                     previouse_w = w
                     break
