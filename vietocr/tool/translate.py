@@ -11,7 +11,7 @@ from . import utils
 
 
 def loosely_load_state_dict(model, sd):
-
+    errors = []
     orig_sd = model.state_dict()
     for key, value in sd.items():
         if key not in orig_sd:
