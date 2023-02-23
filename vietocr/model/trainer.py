@@ -154,6 +154,7 @@ class Trainer(LightningLite):
             for name, param in model.named_parameters():
                 if name in frozen:
                     param.requires_grad = False
+                    print(f"Freezing {name}")
 
         # Dataloaders
         build_dataloader_ = partial(
