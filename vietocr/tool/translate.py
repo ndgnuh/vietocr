@@ -11,17 +11,22 @@ from . import utils
 
 
 def loosely_load_state_dict(model, sd):
+
     orig_sd = model.state_dict()
     for key, value in sd.items():
         if key not in orig_sd:
+            errors.append(key)
             continue
 
         orig_value = orig_sd[key]
         if orig_value.shape != value.shape:
+            errors.append(key)
             continue
 
         orig_sd[key] = value
 
+    errors = '\n'.join([f'\t{k}' for k in errors])
+    print(f"Mismatch keys:\n{errors}")
     model.load_state_dict(orig_sd)
     return model
 
@@ -195,12 +200,7 @@ def build_model(config, move_to_device=True):
                     stn=config.get('stn', None))
     if 'weights' in config:
         weights = load_weights(config['weights'])
-        errors = loosely_load_state_dict(model, weights)
-        errors = '\n'.join([
-            f'\t{k}' for k in
-            (errors.missing_keys + errors.unexpected_keys)
-        ])
-        print(f"Mismatch keys:\n{errors}")
+        loosely_load_state_dict(model, weights)
 
     if move_to_device:
         device = utils.get_device(config.get('device', None))
