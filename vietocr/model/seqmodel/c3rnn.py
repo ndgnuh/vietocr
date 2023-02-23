@@ -88,10 +88,10 @@ class C3RNN(nn.Module):
         input = x[0].argmax(dim=-1).unsqueeze(0)
         for x_t in x:
             output, hidden = self.dec(input, hidden, enc_outputs)
-            output = self.alpha * output + x_t
             input = output.argmax(dim=-1)
             outputs.append(output)
 
         outputs = torch.cat(outputs, dim=0)
+        outputs = self.alpha * outputs + x
         outputs = outputs.transpose(0, 1)
         return outputs
