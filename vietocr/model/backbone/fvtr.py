@@ -52,7 +52,7 @@ class PatchEmbedding(nn.Sequential):
                  embedding_type: str = 'default'):
         super().__init__()
         assert norm_type in ['batchnorm', 'instancenorm', 'localresponse']
-        assert embedding_type in ['default', 'simple', '2x2-overlap']
+        assert embedding_type in ['default', 'simple', '2x2-overlap', '4x3']
         if norm_type == 'batchnorm':
             Norm = nn.BatchNorm2d
         elif norm_type == 'instancenorm':
@@ -61,7 +61,6 @@ class PatchEmbedding(nn.Sequential):
             Norm = nn.LocalResponseNorm
 
         if embedding_type == 'default':
-            assert patch_size % 2 == 0
             self.conv1 = nn.Sequential(
                 nn.Conv2d(image_channel,
                           hidden_size,
@@ -69,7 +68,7 @@ class PatchEmbedding(nn.Sequential):
                           stride=(2, 1),
                           bias=False),
                 Norm(hidden_size),
-                nn.GELU()
+                nn.ReLU()
             )
             self.conv2 = nn.Sequential(
                 nn.Conv2d(hidden_size,
@@ -78,7 +77,17 @@ class PatchEmbedding(nn.Sequential):
                           stride=2,
                           bias=False),
                 Norm(hidden_size),
-                nn.GELU()
+            )
+        elif embedding_type == "4x3":
+            self.patch_embed = nn.Sequential(
+                nn.Conv2d(image_channel, hidden_size,
+                          kernel_size=(3, 1), stride=(2, 1), bias=False),
+                Norm(hidden_size),
+                nn.GeLU(),
+                nn.Conv2d(hidden_size, hidden_size,
+                          kernel_size=(3, 4), stride=(2, 3), bias=False),
+                Norm(hidden_size),
+                nn.GeLU(),
             )
         elif embedding_type == 'simple':
             self.conv = nn.Sequential(
