@@ -7,6 +7,42 @@ import numpy as np
 import cv2
 
 
+def color_overlay(image, color, rate=0.7):
+    image = image * rate + color * (1 - rate)
+    return image
+
+
+def random_color_overlay(image):
+    h, w, c = image.shape
+    num_h_splits = random.randrange(1, 5)
+    num_v_splits = random.randrange(3, 20)
+    s_height = h // num_h_splits
+    s_width = w // num_v_splits
+    for i in range(num_h_splits):
+        for j in range(num_v_splits):
+            h_slice = slice(i * s_height, (i + 1) * s_height)
+            v_slice = slice(j * s_width, (j + 1) * s_width)
+            color = np.random.randint(0, 256, (1, 1, 3))
+            image[h_slice, v_slice, :] = color_overlay(
+                image[h_slice, v_slice, :],
+                rate=random.uniform(0.5, 0.7),
+                color=color
+            )
+    return image
+
+
+class RandomColorOverlay:
+    def __init__(self, p: float = 0.5):
+        self.p = p
+
+    def __call__(self, **kwargs):
+        if random.uniform(0, 1) < self.p:
+            return kwargs
+
+        kwargs['image'] = random_color_overlay(kwargs['image'])
+        return kwargs
+
+
 class RandomOrderCompose:
     def __init__(self, *a, **kw):
         self.compose = A.Compose(*a, **kw)
@@ -122,7 +158,12 @@ class RandomBlurShift:
 
 p = 0.5
 default_augment = RandomOrderCompose([
-    PatternOverlay(patterns="vietocr/data/patterns", p=p),
+    # Overlay
+    SequentialOneOf([
+        RandomColorOverlay(p=1),
+        PatternOverlay(patterns="vietocr/data/patterns", p=1),
+    ], p=0.7),
+
     # Changing image coloring
     SequentialOneOf([
         A.CLAHE(always_apply=True),
