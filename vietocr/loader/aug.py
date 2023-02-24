@@ -25,7 +25,7 @@ def random_color_overlay(image):
             color = np.random.randint(0, 256, (1, 1, 3))
             image[h_slice, v_slice, :] = color_overlay(
                 image[h_slice, v_slice, :],
-                rate=random.uniform(0.5, 0.7),
+                rate=random.uniform(0.7, 0.9),
                 color=color
             )
     return image
