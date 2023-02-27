@@ -209,11 +209,12 @@ def build_model(config, move_to_device=True):
     return model, vocab
 
 
-def resize(w, h, expected_height, image_min_width, image_max_width):
+def resize(w, h, expected_height, image_min_width, image_max_width, strict=False):
     new_w = int(expected_height * float(w) / float(h))
     round_to = 10
     new_w = math.ceil(new_w/round_to)*round_to
-    assert new_w <= image_max_width, f"Image too wide: {new_w}"
+    if strict:
+        assert new_w <= image_max_width, f"Image too wide: {new_w}"
     new_w = max(new_w, image_min_width)
     new_w = min(new_w, image_max_width)
 
