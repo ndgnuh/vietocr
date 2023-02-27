@@ -144,7 +144,7 @@ class OCRDataset(Dataset):
 
         try:
             new_w, image_height = resize(
-                imgW, imgH, self.image_height, self.image_min_width, self.image_max_width)
+                imgW, imgH, self.image_height, self.image_min_width, self.image_max_width, align_width=self.align_width)
         except AssertionError:
             return None
 
