@@ -79,11 +79,13 @@ class OCRDataset(Dataset):
         image_max_width: int = 512,
         transform=None,
         letterbox: bool = False,
+        align_width: int = 10,
     ):
         lmdb_path = get_lbdm_path(annotation_path)
         root_dir = path.dirname(annotation_path)
         annotation_path = path.basename(annotation_path)
 
+        self.align_width = align_width
         self.root_dir = root_dir
         self.annotation_path = annotation_path
         self.vocab = vocab
@@ -179,8 +181,11 @@ class OCRDataset(Dataset):
                 (self.image_max_width, self.image_height)
             )
 
-        img_bw = process_image(img, self.image_height,
-                               self.image_min_width, self.image_max_width)
+        img_bw = process_image(img,
+                               self.image_height,
+                               self.image_min_width,
+                               self.image_max_width,
+                               align_width=self.align_width)
         word = self.vocab.encode(label)
 
         return img_bw, word, img_path
@@ -221,6 +226,7 @@ class ClusterRandomSampler(Sampler):
     def __iter__(self):
         batch_lists = []
         data = self.data_source.cluster_indices
+        skipped = 0
 
         # Keys are image width
         keys = data.keys()
@@ -234,6 +240,10 @@ class ClusterRandomSampler(Sampler):
 
             batches = [cluster_indices[i:i + self.batch_size]
                        for i in range(0, len(cluster_indices), self.batch_size)]
+            for batch in batches:
+                if len(batch) != self.batch_size:
+                    skipped += len(batch)
+
             batches = [_ for _ in batches if len(_) == self.batch_size]
             if self.shuffle:
                 random.shuffle(batches)
@@ -241,6 +251,9 @@ class ClusterRandomSampler(Sampler):
             batch_lists.append(batches)
 
         lst = self.flatten_list(batch_lists)
+
+        if skipped > 0:
+            print(f"Skipped {skipped} data points for not fitting anywhere")
 
         # Don't shuffle if curriculum learning
         if self.shuffle and not self.curriculum:
@@ -319,7 +332,8 @@ def build_dataloader(
     num_workers: Optional[int] = None,
     curriculum: Optional[bool] = True,
     letterbox: Optional[bool] = False,
-    shift_target: Optional[bool] = False
+    shift_target: Optional[bool] = False,
+    align_width: Optional[int] = 10,
 ):
     dataset = get_dataset(annotation_paths=annotation_path,
                           vocab=vocab,
@@ -327,7 +341,8 @@ def build_dataloader(
                           image_height=image_height,
                           image_min_width=image_min_width,
                           image_max_width=image_max_width,
-                          letterbox=letterbox)
+                          letterbox=letterbox,
+                          align_width=align_width)
 
     sampler = ClusterRandomSampler(
         dataset,

@@ -209,10 +209,17 @@ def build_model(config, move_to_device=True):
     return model, vocab
 
 
-def resize(w, h, expected_height, image_min_width, image_max_width, strict=False):
+def resize(
+    w,
+    h,
+    expected_height,
+    image_min_width,
+    image_max_width,
+    strict=False,
+    align_width: int = 10
+):
     new_w = int(expected_height * float(w) / float(h))
-    round_to = 10
-    new_w = math.ceil(new_w/round_to)*round_to
+    new_w = math.ceil(new_w/align_width)*align_width
     if strict:
         assert new_w <= image_max_width, f"Image too wide: {new_w}"
     new_w = max(new_w, image_min_width)
@@ -221,12 +228,12 @@ def resize(w, h, expected_height, image_min_width, image_max_width, strict=False
     return new_w, expected_height
 
 
-def process_image(image, image_height, image_min_width, image_max_width):
+def process_image(image, image_height, image_min_width, image_max_width, **k):
     img = image.convert('RGB')
 
     w, h = img.size
     new_w, image_height = resize(
-        w, h, image_height, image_min_width, image_max_width)
+        w, h, image_height, image_min_width, image_max_width, **k)
 
     img = img.resize((new_w, image_height), Image.ANTIALIAS)
 
