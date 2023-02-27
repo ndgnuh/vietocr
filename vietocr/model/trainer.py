@@ -1,3 +1,4 @@
+from pytorch_lightning import seed_everything
 from ..loader.dataloader import build_dataloader
 from ..loader.aug import default_augment
 from ..tool.utils import compute_accuracy
@@ -42,7 +43,7 @@ def cycle(total_steps, dataloader):
             step = step + 1
             yield step, batch
 
-            if step == total_steps:
+            if step == total_steps - 1:
                 return
 
 
@@ -50,6 +51,7 @@ def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: 
     model.train()
     optimizer.zero_grad(set_to_none=True)
     images, labels, target_lengths = batch
+    # ic(images.shape)
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
     lite.backward(loss)
@@ -100,15 +102,27 @@ class Trainer(LightningLite):
         super().__init__(accelerator=accelerator)
         training_config = config['training']
 
+        # PRNG seeding for debug
+        seed = os.environ.get(
+            "SEED",
+            training_config.get("seed", None)
+        )
+        if seed is not None:
+            seed = int(seed)
+            seed_everything(seed, workers=True)
+            random.seed(seed)
+
         # Checkpoint and saving
         self.name = config['name']
         self.output_weights_path = path.join(
             const.weight_dir,
             f"{self.name}.pth"
         )
-        self.logger = get_logger(
-            path.join(const.log_dir, self.name)
-        )
+        log_dir = path.join(const.log_dir, self.name)
+        if os.path.isdir(log_dir):
+            import shutil
+            shutil.rmtree(log_dir)
+        self.logger = get_logger(log_dir)
 
         # Scheduling stuffs
         self.total_steps = training_config['total_steps']
@@ -141,12 +155,20 @@ class Trainer(LightningLite):
             betas=(0.9, 0.98),
             eps=1e-09
         )
-        self.lr_scheduler = lr_scheduler.OneCycleLR(
-            self.optimizer,
-            total_steps=training_config['total_steps'],
-            max_lr=training_config['learning_rate'],
-            pct_start=0.1,
-        )
+        lr_scheduler_config = training_config.get('lr_scheduler', None)
+        if lr_scheduler_config is None:
+            self.lr_scheduler = lr_scheduler.OneCycleLR(
+                self.optimizer,
+                total_steps=training_config['total_steps'],
+                max_lr=training_config['learning_rate'],
+                pct_start=0.1,
+            )
+        else:
+            name = lr_scheduler_config.pop("name")
+            self.lr_scheduler = getattr(lr_scheduler, name)(
+                self.optimizer,
+                **lr_scheduler_config
+            )
 
         # Freezing
         frozen = training_config.get("freeze", [])
