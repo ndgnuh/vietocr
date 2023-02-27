@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import torch
 import random
 import os
+from datetime import datetime
 
 # fix: https://github.com/ndgnuh/vietocr/issues/2
 # ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
@@ -43,7 +44,7 @@ def cycle(total_steps, dataloader):
             step = step + 1
             yield step, batch
 
-            if step == total_steps - 1:
+            if step == total_steps:
                 return
 
 
@@ -122,6 +123,8 @@ class Trainer(LightningLite):
         if os.path.isdir(log_dir):
             import shutil
             shutil.rmtree(log_dir)
+        now_str = datetime.now().strftime('%y%m%d%H%M__%H:%M_%d.%m.%Y')
+        log_dir = f"{log_dir}@{now_str}"
         self.logger = get_logger(log_dir)
 
         # Scheduling stuffs
@@ -189,6 +192,7 @@ class Trainer(LightningLite):
             image_max_width=config['image_max_width'],
             batch_size=training_config.get('batch_size', 1),
             num_workers=training_config.get('num_workers', 1),
+            curriculum=training_config.get('curriculum', True),
             letterbox=config['image_letterbox'],
             align_width=training_config.get('align_width', 10),
             shift_target=True if config['type'] == 's2s' else False
@@ -232,7 +236,7 @@ class Trainer(LightningLite):
         step = 0
         # Use two loops to release CUDA cache
         # when the image width is changed
-        while step < self.total_steps:
+        while step < self.total_steps - 1:
             while True:
                 step, batch = next(data_gen)
                 w = batch[0].shape[-1]  # image width
