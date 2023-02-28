@@ -115,6 +115,10 @@ class Trainer(LightningLite):
 
         # Checkpoint and saving
         self.name = config['name']
+        self.latest_weights_path = path.join(
+            const.weight_dir,
+            f"latest__{self.name}.pth"
+        )
         self.output_weights_path = path.join(
             const.weight_dir,
             f"{self.name}.pth"
@@ -279,6 +283,10 @@ class Trainer(LightningLite):
 
                     # Check if new best
                     new_best = best_full_seq.append(metrics['full_seq'])
+                    torch.save(model.state_dict(),
+                               self.latest_weights_path)
+                    tqdm.write(
+                        f"Model weights saved to {self.latest_weights_path}")
                     if new_best:
                         torch.save(model.state_dict(),
                                    self.output_weights_path)
@@ -286,10 +294,12 @@ class Trainer(LightningLite):
                             f"Model weights saved to {self.output_weights_path}")
 
                 lr = optimizer.param_groups[0]['lr']
-                self.log("lr", lr, step)
-                self.log("loss/train", loss.item(), step)
-                self.log("teacher-forcing", tf_scheduler.current_ratio(), step)
-                self.log("image width", w, step)
+                self.log("train/loss", loss.item(), step)
+                self.log("train/lr", lr, step)
+                self.log("train/teacher-forcing",
+                         tf_scheduler.current_ratio(), step)
+                self.log("train/image-width", w, step)
+                self.log("train/gpu-time", gpu_time.summarize(), step)
 
                 if step % print_every == 0:
                     mean_train_loss = train_loss.summarize()
