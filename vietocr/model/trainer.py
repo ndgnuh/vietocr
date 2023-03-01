@@ -28,6 +28,19 @@ from datetime import datetime
 # os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
+def infer_steps_from_epochs(
+    annotation_file: str,
+    num_epochs: int,
+    batch_size: int
+):
+    with open(annotation_file) as f:
+        ndata = len(f.readlines())
+
+    num_batches = ndata // batch_size + 1
+    total_steps = num_batches * num_epochs
+    return total_steps
+
+
 def get_logger(log_dir):
     try:
         from torch.utils.tensorboard import SummaryWriter
@@ -132,6 +145,12 @@ class Trainer(LightningLite):
         self.logger = get_logger(log_dir)
 
         # Scheduling stuffs
+        if 'total_epochs' in training_config:
+            training_config['total_steps'] = infer_steps_from_epochs(
+                training_config['train_annotation'],
+                num_epochs=training_config['total_epochs'],
+                batch_size=training_config['batch_size']
+            )
         self.total_steps = training_config['total_steps']
         self.validate_every = training_config['validate_every']
         if isinstance(self.validate_every, float):
