@@ -22,6 +22,7 @@ import torch
 import random
 import os
 from datetime import datetime
+from typing import List, Union
 
 # fix: https://github.com/ndgnuh/vietocr/issues/2
 # ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
@@ -29,12 +30,17 @@ from datetime import datetime
 
 
 def infer_steps_from_epochs(
-    annotation_file: str,
+    annotation_files: Union[str, List[str]],
     num_epochs: int,
     batch_size: int
 ):
-    with open(annotation_file) as f:
-        ndata = len(f.readlines())
+    if isinstance(annotation_files, str):
+        annotation_files = [annotation_files]
+
+    ndata = 0
+    for annotation_file in annotation_files:
+        with open(annotation_file) as f:
+            ndata = ndata + len(f.readlines())
 
     num_batches = ndata // batch_size + 1
     total_steps = num_batches * num_epochs
