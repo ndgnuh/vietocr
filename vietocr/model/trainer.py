@@ -199,7 +199,9 @@ class Trainer(LightningLite):
             curriculum=training_config.get('curriculum', True),
             letterbox=config['image_letterbox'],
             align_width=training_config.get('align_width', 10),
-            shift_target=True if config['type'] == 's2s' else False
+            shift_target=True if config['type'] == 's2s' else False,
+            limit_batch_per_size=training_config.get(
+                'limit_batch_per_size', None)
         )
         self.train_data = build_dataloader_(
             annotation_path=training_config['train_annotation'],

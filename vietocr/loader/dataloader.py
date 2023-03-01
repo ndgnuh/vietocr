@@ -214,16 +214,22 @@ class ClusterRandomSampler(Sampler):
                  data_source,
                  batch_size: int,
                  curriculum: bool = False,
-                 shuffle: bool = True):
+                 shuffle: bool = True,
+                 limit_batch_per_size: Optional[int] = None):
         self.data_source = data_source
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.curriculum = curriculum
+        self.limit_batch_per_size = limit_batch_per_size
 
     def flatten_list(self, lst):
         return [item for sublist in lst for item in sublist]
 
-    def __iter__(self):
+    def _shuffle(self, x):
+        random.shuffle(x)
+        return x
+
+    def to_list(self):
         batch_lists = []
         data = self.data_source.cluster_indices
         skipped = 0
@@ -238,8 +244,7 @@ class ClusterRandomSampler(Sampler):
 
         for cluster in keys:
             cluster_indices = data[cluster]
-            if self.shuffle:
-                random.shuffle(cluster_indices)
+            random.shuffle(cluster_indices)
 
             batches = [cluster_indices[i:i + self.batch_size]
                        for i in range(0, len(cluster_indices), self.batch_size)]
@@ -248,6 +253,10 @@ class ClusterRandomSampler(Sampler):
                     skipped += len(batch)
 
             batches = [_ for _ in batches if len(_) == self.batch_size]
+            if self.limit_batch_per_size is not None:
+                random.shuffle(batches)
+                batches = batches[:self.limit_batch_per_size]
+
             if self.shuffle:
                 random.shuffle(batches)
 
@@ -263,8 +272,12 @@ class ClusterRandomSampler(Sampler):
             random.shuffle(lst)
 
         lst = self.flatten_list(lst)
+        return lst
 
-        return iter(lst)
+    def __iter__(self):
+        # This was separated to do something like len(self.to_list())
+        # But the bug limit feature was fixed and there's no need for this anymore
+        return iter(self.to_list())
 
     def __len__(self):
         return len(self.data_source)
@@ -337,6 +350,7 @@ def build_dataloader(
     letterbox: Optional[bool] = False,
     shift_target: Optional[bool] = False,
     align_width: Optional[int] = 10,
+    limit_batch_per_size: Optional[int] = None,
 ):
     dataset = get_dataset(annotation_paths=annotation_path,
                           vocab=vocab,
@@ -351,7 +365,8 @@ def build_dataloader(
         dataset,
         batch_size,
         shuffle=shuffle,
-        curriculum=curriculum
+        curriculum=curriculum,
+        limit_batch_per_size=limit_batch_per_size,
     )
     collate_fn = Collator(shift_target=shift_target)
 
