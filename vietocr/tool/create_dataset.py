@@ -8,6 +8,11 @@ import re
 from multiprocessing import Process, Queue
 
 
+def split_annotation(line):
+    splits = re.split(r"\s+", line.strip())
+    return splits[0], " ".join(splits[1:])
+
+
 def checkImageIsValid(imageBin):
     isvalid = True
     imgH = None
@@ -133,10 +138,6 @@ def createDataset(outputPath, root_dir, annotation_path):
     """
 
     annotation_path = os.path.join(root_dir, annotation_path)
-
-    def split_annotation(line):
-        splits = re.split(r"\s+", line.strip())
-        return splits[0], " ".join(splits[1:])
 
     with open(annotation_path, 'r') as ann_file:
         lines = ann_file.readlines()
