@@ -48,7 +48,7 @@ def main(config, options):
     all_pr_sents = []
     all_gt_sents = []
     device = next(model.parameters()).device
-    for img, tgt_output in tqdm(test_loader):
+    for img, tgt_output, _ in tqdm(test_loader):
         img = img.to(device)
         tgt_output = tgt_output.to(device)
 
