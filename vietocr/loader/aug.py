@@ -162,7 +162,7 @@ default_augment = RandomOrderCompose([
     SequentialOneOf([
         RandomColorOverlay(p=1),
         PatternOverlay(patterns="vietocr/data/patterns", p=1),
-    ], p=0.7),
+    ], p=p),
 
     # Changing image coloring
     SequentialOneOf([

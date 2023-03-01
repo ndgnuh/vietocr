@@ -232,6 +232,9 @@ class ClusterRandomSampler(Sampler):
         keys = data.keys()
         if self.curriculum:
             keys = sorted(keys)
+        else:
+            keys = list(keys)
+            random.shuffle(keys)
 
         for cluster in keys:
             cluster_indices = data[cluster]
