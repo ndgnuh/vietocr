@@ -148,7 +148,7 @@ class Trainer(LightningLite):
             shutil.rmtree(log_dir)
         now_str = datetime.now().strftime('%y%m%d%H%M__%H:%M_%d.%m.%Y')
         log_dir = f"{log_dir}@{now_str}"
-        self.logger = get_logger(log_dir)
+        self._logger = get_logger(log_dir)
 
         # Scheduling stuffs
         if 'total_epochs' in training_config:
@@ -310,10 +310,6 @@ class Trainer(LightningLite):
 
                     # Check if new best
                     new_best = best_full_seq.append(metrics['full_seq'])
-                    torch.save(model.state_dict(),
-                               self.latest_weights_path)
-                    tqdm.write(
-                        f"Model weights saved to {self.latest_weights_path}")
                     if new_best:
                         torch.save(model.state_dict(),
                                    self.output_weights_path)
@@ -341,6 +337,10 @@ class Trainer(LightningLite):
                         f"GPU time: {gpu_time.summarize():.2f}s",
                         f"Width: {batch[0].shape[-1]}",
                     )
+                    torch.save(model.state_dict(),
+                               self.latest_weights_path)
+                    tqdm.write(
+                        f"Model weights saved to {self.latest_weights_path}")
                     tqdm.write(" - ".join(info))
                 pbar.update(1)
 
@@ -364,7 +364,7 @@ class Trainer(LightningLite):
                     break
 
     def log(self, tag, value, step):
-        logger = self.logger
+        logger = self._logger
         if logger is None:
             return
         logger.add_scalar(tag, value, step)
