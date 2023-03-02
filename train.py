@@ -33,27 +33,15 @@ def run_test(config):
     model, vocab = build_model(config)
 
 
-def export(config, weight_path, output):
+def export(config, output):
     import torch
-    from PIL import Image
-    from vietocr.tool.translate import process_input
-    from vietocr.tool.predictor_wrapper import Predictor
+    from vietocr.tool.predictor import Predictor
 
     # Get sample data
-    data = config['dataset']
-    sample_input = Image.open("image/sample.png")
-    sample_input = process_input(
-        sample_input,
-        image_height=data['image_height'],
-        image_min_width=data['image_min_width'],
-        image_max_width=data['image_max_width'],
-    )
+    sample_input = torch.rand(2, 3, config['image_height'], 100)
 
     # Load the model
-    config['device'] = 'cpu'
-    config['weights'] = weight_path
-    config['predictor'] = dict(beamsearch=False)
-    model = Predictor(config)
+    model = Predictor(config).model
 
     # Export
     print(sample_input.shape)
@@ -61,11 +49,11 @@ def export(config, weight_path, output):
         model.eval(),
         sample_input,
         output,
-        opset_version=12,
+        opset_version=15,
         do_constant_folding=True,
         input_names=["images"],
         dynamic_axes=dict(
-            images=[3]
+            images=[0, 3]  # Dynamic width and height
         )
     )
 
@@ -111,11 +99,8 @@ def main():
     )
 
     # Export
-    export_parser = sp.add_parser('export')
-    export_parser.add_argument('-w', '--weight',
-                               dest="weight",
-                               required=True,
-                               help='model weight path')
+    export_parser = sp.add_parser('export', help="Export to ONNX")
+    export_parser.add_argument('output', help="Output file path")
 
     # Dump config file
     sp.add_parser('dump')
@@ -132,7 +117,7 @@ def main():
         from vietocr.scripts import test
         test.main(config, args)
     elif action == "export":
-        export(config, args.weight, "test.onnx")
+        export(config, args.output)
     elif action == "dump":
         pprint(config)
 
