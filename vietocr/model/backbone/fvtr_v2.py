@@ -5,7 +5,44 @@ from typing import Tuple, List
 import torch
 
 
+class PositionalEncoding2D(nn.Module):
+    def __init__(self, num_channels):
+        super().__init__()
+        self.num_channels = num_channels
+        channels = int(round(num_channels / 4 + 0.5) * 2)
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, channels, 2) / channels))
+        self.register_buffer("inv_freq", inv_freq)
+
+    def get_embed(self, inp):
+        return torch.stack([inp.sin(), inp.cos()], dim=-1).flatten(-2)
+
+    def forward(self, x):
+        # x: b c h w
+
+        # h | w
+        hsin = torch.arange(x.size(-2), dtype=x.dtype, device=x.device)
+        wsin = torch.arange(x.size(-1), dtype=x.dtype, device=x.device)
+
+        # h, (c / 4) | w, (c / 4)
+        hsin = torch.einsum('i,j->ij', hsin, self.inv_freq)
+        wsin = torch.einsum('i,j->ij', wsin, self.inv_freq)
+
+        # h * 1 * (c / 2) | 1 * w * (c / 2)
+        hemb = self.get_embed(hsin).unsqueeze(1)
+        wemb = self.get_embed(wsin).unsqueeze(0)
+
+        # h w c -> c h w
+        posemb = torch.cat(torch.broadcast_tensors(hemb, wemb), dim=2)
+        posemb = posemb.permute((2, 0, 1))
+
+        # add batch
+        posemb = posemb.unsqueeze(0).repeat([x.size(0), 1, 1, 1])
+
+        return posemb
+
+
 class ShuffleBlock(nn.Module):
+
     def __init__(self, groups):
         super(ShuffleBlock, self).__init__()
         self.groups = groups
@@ -46,9 +83,12 @@ class FVTREmbedding(nn.Module):
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
         )
+        self.positional_embedding = PositionalEncoding2D(hidden_size)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
+        pos_embeds = self.positional_embedding(embeddings)
+        embeddings = embeddings + pos_embeds
         return embeddings
 
 
