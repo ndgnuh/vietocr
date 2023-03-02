@@ -79,7 +79,14 @@ def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: 
     return loss
 
 
-def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.05, teacher_forcing: bool = False):
+def adversarial_train_step(
+    lite,
+    model,
+    batch,
+    criterion,
+    optimizer,
+    teacher_forcing: bool = False
+):
     model.train()
 
     # Generating gradient on the input images
@@ -100,14 +107,23 @@ def adversarial_train_step(lite, model, batch, criterion, optimizer, epsilon=0.0
     # Generating adversarial examples
     sign_data_grad = data_grad.sign()
     # Create the perturbed image by adjusting each pixel of the input image
+    # 1% to 5% noise
+    epsilon = random.uniform(0.01, 0.05)
     perturbed_images = images + epsilon * sign_data_grad
     # Adding clipping to maintain [0,1] range
     perturbed_images = torch.clamp(perturbed_images, 0, 1)
 
+    if os.environ.get("DEBUG", "") != "":
+        from torchvision.transforms import functional as TF
+        for i, image in enumerate(perturbed_images):
+            dbg_image = torch.cat((images[i], image), dim=-1)
+            dbg_image = TF.to_pil_image(dbg_image)
+            dbg_image.save(f"debug/adv/{i:03d}.png")
+
     # Train on perturbed image
     optimizer.zero_grad()
     outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
-    loss = criterion(outputs, labels, target_lengths) * 0.05
+    loss = criterion(outputs, labels, target_lengths)
     lite.backward(loss)
     optimizer.step()
     return loss
@@ -237,6 +253,15 @@ class Trainer(LightningLite):
             transform=None
         )
 
+        # Types of training
+        train_steps = [basic_train_step]
+        for step in training_config.get("train_steps", []):
+            if step == "adversarial" or step == "adv":
+                train_steps.append(adversarial_train_step)
+
+                print("=== USING ADVERSARIAL TRAINING STEP ===")
+        self.train_steps = train_steps
+
     def run(self):
         train_data = self.setup_dataloaders(self.train_data)
         print("Number of training batches:", len(train_data))
@@ -275,23 +300,19 @@ class Trainer(LightningLite):
                 # Training step
                 with gpu_time:
                     teacher_forcing = tf_scheduler.step()
-                    loss = basic_train_step(
-                        self,
-                        model,
-                        batch,
-                        optimizer=optimizer,
-                        criterion=criterion,
-                        teacher_forcing=teacher_forcing,
-                    )
-                    # adversarial_train_step(
-                    #     self,
-                    #     model,
-                    #     batch,
-                    #     optimizer=optimizer,
-                    #     criterion=criterion,
-                    #     teacher_forcing=teacher_forcing,
-                    # )
-                train_loss.append(loss.item())
+                    for train_step in self.train_steps:
+                        loss = train_step(
+                            self,
+                            model,
+                            batch,
+                            optimizer=optimizer,
+                            criterion=criterion,
+                            teacher_forcing=teacher_forcing,
+                        )
+                        try:
+                            train_loss.append(loss.item())
+                        except Exception:
+                            train_loss.append(loss)
 
                 lr_scheduler.step()
 
