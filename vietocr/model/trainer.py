@@ -131,12 +131,21 @@ def adversarial_train_step(
 
 class Trainer(LightningLite):
     def __init__(self, config):
-        if config.get('device', 'cuda'):
-            accelerator = 'gpu'
-        else:
-            accelerator = None
-        super().__init__(accelerator=accelerator)
         training_config = config['training']
+        if 'accelerator' in training_config:
+            accelerator = training_config['accelerator']
+        else:
+            accelerator = 'gpu' if torch.cuda.is_available() else None
+
+        # 16 | 32 | 64 | bf16
+        if "float_precision" in training_config:
+            precision = training_config['float_precision']
+
+        # medium | high
+        if "matmul_precision" in training_config:
+            torch.set_float32_matmul_precision('medium')
+
+        super().__init__(accelerator=accelerator, precision=precision)
 
         # PRNG seeding for debug
         seed = os.environ.get(
