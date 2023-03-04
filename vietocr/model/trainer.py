@@ -238,6 +238,7 @@ class Trainer(LightningLite):
             batch_size=training_config.get('batch_size', 1),
             num_workers=training_config.get('num_workers', 1),
             curriculum=training_config.get('curriculum', True),
+            shuffle=training_config.get('shuffle', True),
             letterbox=config['image_letterbox'],
             align_width=training_config.get('align_width', 10),
             shift_target=True if config['type'] == 's2s' else False,
