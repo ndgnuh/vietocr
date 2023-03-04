@@ -138,8 +138,7 @@ class Trainer(LightningLite):
             accelerator = 'gpu' if torch.cuda.is_available() else None
 
         # 16 | 32 | 64 | bf16
-        if "float_precision" in training_config:
-            precision = training_config['float_precision']
+        precision = training_config.get('float_precision', 32)
 
         # medium | high
         if "matmul_precision" in training_config:
