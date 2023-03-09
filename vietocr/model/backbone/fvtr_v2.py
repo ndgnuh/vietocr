@@ -1,8 +1,45 @@
 from torchvision.transforms import functional as TF
 from einops.layers.torch import Rearrange, Reduce
+from torch.nn import functional as F
 from torch import nn, Tensor
 from typing import Tuple, List
 import torch
+
+
+def skew(orig_x, padding_value):
+    x = orig_x
+    '''shift every row 1 step to right converting columns into diagonals'''
+    rest, H, W = x.shape[:-2], x.size(-2), x.size(-1)
+    x = F.pad(x, (0, H), value=padding_value)
+    x = x.reshape(*rest, -1)  # B x C x ML+MM+M
+    x = x[..., :-H]  # B x C x ML+MM
+    x = x.reshape(*rest, H, H + W - 1)  # B x C, M x L+M
+    x = x[..., (W//2):-(W//2)+(W % 2-1)]
+    return x
+
+
+class MaskProvider2d(nn.Module):
+    def __init__(self, locality):
+        super().__init__()
+        self.locality = locality
+
+    def forward(self, x):
+        kh, kw = self.locality
+        kernel = torch.ones(1, 1, kh, kw, dtype=torch.long, device=x.device)
+        mask = kernel.repeat([x.size(-2), x.size(-1), 1, 1])
+
+        # H W kh kw -> H kh W kw
+        mask = mask.permute([0, 2, 1, 3])
+        mask = skew(mask, 0)
+
+        # H kh W kw -> W kw H kh
+        mask = mask.permute([2, 3, 0, 1])
+        mask = skew(mask, 0)
+
+        # W kw H kh -> H W kh kw
+        mask = mask.permute([2, 0, 3, 1])
+        mask = mask.flatten(2, 3).flatten(0, 1)
+        return mask
 
 
 class PositionalEncoding2D(nn.Module):
@@ -232,18 +269,24 @@ class LocalAttention(nn.Module):
 class MultiheadAttention(nn.Module):
     def __init__(self, hidden_size, num_heads):
         super().__init__()
+        assert hidden_size % num_heads == 0
+        self.dropout = nn.Dropout(0.1)
         self.num_heads = num_heads
-        self.temperature = torch.sqrt(1 / torch.tensor(hidden_size))
-        self.QKV = nn.Linear(hidden_size, hidden_size *
-                             num_heads * 3, bias=False)
+        self.temperature = torch.sqrt(
+            1 / torch.tensor(hidden_size // num_heads))
+        self.QKV = nn.Linear(hidden_size, hidden_size * 3, bias=False)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         QKV = torch.stack(self.QKV(x).chunk(self.num_heads, dim=-1), dim=1)
         Q, K, V = QKV.chunk(3, dim=-1)
         QK = torch.matmul(Q * self.temperature, K.transpose(-1, -2))
+        QK = self.dropout(QK)
+        if mask is not None:
+            mask = mask[None, None, :, :] * QK
         W = torch.softmax(QK, dim=-1)
         output = torch.matmul(W, V)
-        output = output.mean(dim=1)
+        output = torch.cat([output[:, i]
+                           for i in range(self.num_heads)], dim=-1)
         return output
 
 
@@ -262,15 +305,11 @@ class MixerLayer(nn.Module):
                  dropout: float = 0.1):
         super().__init__()
         self.local = local
+        self.attention = MultiheadAttention(
+            hidden_size, num_attention_head,
+        )
         if local:
-            self.attention = LocalAttention(
-                hidden_size, 4, num_attention_head,
-            )
-        else:
-            self.attention = MultiheadAttention(
-                hidden_size,
-                num_attention_head,
-            )
+            self.gen_mask = MaskProvider2d((7, 11))
 
         self.project = nn.Sequential(
             nn.Linear(hidden_size, hidden_size, bias=False),
@@ -283,8 +322,12 @@ class MixerLayer(nn.Module):
         else:
             return "GlobalMixer"
 
-    def forward(self, patch_embed):
-        weight = self.attention(patch_embed)
+    def forward(self, patches, image):
+        if self.local:
+            mask = self.gen_mask(image)
+        else:
+            mask = None
+        weight = self.attention(patches, mask=mask)
         output = self.project(weight)
         return output
 
@@ -314,11 +357,11 @@ class MixerBlock(nn.Module):
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
-    def forward(self, image):
-        image = self.mixer(image) + image
-        image = self.norm_mixer(image)
-        image = self.mlp(image) + image
-        image = self.norm_mlp(image)
+    def forward(self, patches, image):
+        image = self.mixer(patches, image) + patches
+        image = self.norm_mixer(patches)
+        image = self.mlp(image) + patches
+        image = self.norm_mlp(patches)
         return image
 
 
@@ -351,14 +394,14 @@ class FVTRStage(nn.Module):
         self.mixing_blocks = mixing_blocks
         self.merging = merging
 
-    def forward(self, x: Tensor):
-        c, h, w = x.shape[-3:]
+    def forward(self, image: Tensor):
+        c, h, w = image.shape[-3:]
         # b c h w -> b w h c -> h (w h) c
-        x = x.transpose(-1, -3)
+        x = image.transpose(-1, -3)
         x = x.reshape(-1, (w * h), c)
 
         for block in self.mixing_blocks:
-            x = block(x)
+            x = block(x, image)
 
         # b (w h) c -> b w h c -> b c h w
         x = x.reshape(-1, w, h, c)
