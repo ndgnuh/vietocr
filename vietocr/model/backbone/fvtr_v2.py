@@ -23,6 +23,7 @@ class MaskProvider2d(nn.Module):
         super().__init__()
         self.locality = locality
 
+    @torch.no_grad()
     def forward(self, x):
         kh, kw = self.locality
         kernel = torch.ones(1, 1, kh, kw, dtype=torch.long, device=x.device)
@@ -110,13 +111,11 @@ class FVTREmbedding(nn.Module):
         self.patch_embedding = nn.Sequential(
             nn.Conv2d(image_channel, hidden_size, 1),
             nn.Conv2d(hidden_size, hidden_size,
-                      kernel_size=3, stride=2,
-                      bias=False),
+                      kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
             nn.Conv2d(hidden_size, hidden_size,
-                      kernel_size=(3, 1), stride=(2, 1),
-                      bias=False),
+                      kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
         )
@@ -150,12 +149,21 @@ class CombiningBlock(nn.Module):
         super().__init__()
         # self.attn = SpatialAttention2d()
         self.project = nn.Linear(input_size, output_size)
+        self.mix = nn.Conv1d(input_size, input_size, kernel_size=7)
         self.act = nn.ReLU()
 
     def forward(self, image):
         # out = self.attn(image) * image
-        # b c h w -> b c w
-        out = image.mean(dim=2)
+        # b c h w -> b c wh
+        # transpose so that the flatten goes like this
+        # 0 3 6
+        # 1 4 7
+        # 2 5 8
+        out = image.transpose(-1, -2).flatten(-2)
+
+        # Mix information
+        out = self.mix(out)
+        out = self.act(out)
 
         # b c w -> b w c
         out = out.transpose(-1, -2)
@@ -275,6 +283,7 @@ class MultiheadAttention(nn.Module):
         self.temperature = torch.sqrt(
             1 / torch.tensor(hidden_size // num_heads))
         self.QKV = nn.Linear(hidden_size, hidden_size * 3, bias=False)
+        self.project = nn.Linear(hidden_size, hidden_size, bias=True)
 
     def forward(self, x, mask=None):
         QKV = torch.stack(self.QKV(x).chunk(self.num_heads, dim=-1), dim=1)
@@ -287,6 +296,7 @@ class MultiheadAttention(nn.Module):
         output = torch.matmul(W, V)
         output = torch.cat([output[:, i]
                            for i in range(self.num_heads)], dim=-1)
+        output = self.project(output)
         return output
 
 
@@ -308,9 +318,6 @@ class MixerLayer(nn.Module):
         self.attention = MultiheadAttention(
             hidden_size, num_attention_head,
         )
-        if local:
-            self.gen_mask = MaskProvider2d((7, 11))
-
         self.project = nn.Sequential(
             nn.Linear(hidden_size, hidden_size, bias=False),
             nn.Dropout(dropout)
@@ -322,11 +329,7 @@ class MixerLayer(nn.Module):
         else:
             return "GlobalMixer"
 
-    def forward(self, patches, image):
-        if self.local:
-            mask = self.gen_mask(image)
-        else:
-            mask = None
+    def forward(self, patches, mask):
         weight = self.attention(patches, mask=mask)
         output = self.project(weight)
         return output
@@ -342,6 +345,7 @@ class MixerBlock(nn.Module):
         dropout: float = 0.,
     ):
         super().__init__()
+        self.local = local
         self.mixer = MixerLayer(hidden_size=hidden_size,
                                 num_attention_head=num_attention_head,
                                 local=local,
@@ -357,8 +361,8 @@ class MixerBlock(nn.Module):
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
-    def forward(self, patches, image):
-        image = self.mixer(patches, image) + patches
+    def forward(self, patches, mask):
+        image = self.mixer(patches, mask) + patches
         image = self.norm_mixer(patches)
         image = self.mlp(image) + patches
         image = self.norm_mlp(patches)
@@ -372,12 +376,16 @@ class FVTRStage(nn.Module):
         output_size: int,
         num_attention_head: int,
         permutation: List,
-        combine: bool
+        combine: bool,
+        locality: Tuple[int, int],
     ):
         super().__init__()
 
         mixing_blocks = nn.ModuleList()
+        self.gen_mask = None
         for local in permutation:
+            if local:
+                self.gen_mask = MaskProvider2d(locality)
             block = MixerBlock(
                 hidden_size=input_size,
                 num_attention_head=num_attention_head,
@@ -399,9 +407,16 @@ class FVTRStage(nn.Module):
         # b c h w -> b w h c -> h (w h) c
         x = image.transpose(-1, -3)
         x = x.reshape(-1, (w * h), c)
+        if self.gen_mask is None:
+            mask = None
+        else:
+            mask = self.gen_mask(image)
 
         for block in self.mixing_blocks:
-            x = block(x, image)
+            if block.local:
+                x = block(x, mask=mask)
+            else:
+                x = block(x, mask=None)
 
         # b (w h) c -> b w h c -> b c h w
         x = x.reshape(-1, w, h, c)
@@ -417,7 +432,7 @@ class FVTR(nn.Sequential):
                  output_size: int,
                  permutations: List[List[int]],
                  num_attention_heads: List[int],
-                 locality: Tuple[int, int] = (7, 11),
+                 locality: Tuple[int, int] = (9, 9),
                  patch_size: int = 4,
                  image_channel: int = 3,
                  max_position_ids: int = 128,
@@ -453,7 +468,8 @@ class FVTR(nn.Sequential):
                 output_size=output_size,
                 permutation=permutation,
                 num_attention_head=num_attention_head,
-                combine=combine
+                combine=combine,
+                locality=locality,
             )
             stages.append(stage)
 
