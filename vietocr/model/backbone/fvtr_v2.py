@@ -42,8 +42,8 @@ class MaskProvider2d(nn.Module):
         mask = mask.flatten(2, 3).flatten(0, 1)
 
         # bool mask to inf
-        mask_inf = torch.ones_like(mask) * -torch.inf
-        mask = torch.where(mask, mask, mask_inf)
+        # mask_inf = torch.ones_like(mask) * -torch.inf
+        # mask = torch.where(mask, mask, mask_inf)
         return mask
 
 
@@ -152,7 +152,7 @@ class CombiningBlock(nn.Module):
         super().__init__()
         # self.attn = SpatialAttention2d()
         self.project = nn.Linear(input_size, output_size)
-        self.mix = nn.Conv1d(input_size, input_size, kernel_size=5, padding=2)
+        self.atn = SpatialAttention2d(7)
         self.act = nn.GELU(approximate='tanh')
 
     def forward(self, image):
@@ -164,11 +164,8 @@ class CombiningBlock(nn.Module):
         # 0 3 6
         # 1 4 7
         # 2 5 8
+        image = image + self.atn(image) * image
         out = image.mean(dim=-2)
-
-        # Mix information
-        out = out + self.mix(out)
-        out = self.act(out)
 
         # b c w -> b w c
         out = out.transpose(-1, -2)
@@ -181,12 +178,19 @@ class MergingBlock(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
         self.conv = nn.Conv2d(input_size, output_size,
-                              kernel_size=3, stride=(2, 1))
+                              kernel_size=3,
+                              padding=1,
+                              stride=(2, 1))
         self.norm = nn.InstanceNorm2d(output_size)
 
     def forward(self, x):
         out = self.conv(x)
+        # n c h w -> n h w c
+        # n c h w -> n h w c
+        # out = out.permute((0, 2, 3, 1))
         out = self.norm(out)
+        # n h w c -> n c h w
+        # out = out.permute((0, 3, 1, 2))
         return out
 
 
@@ -204,7 +208,7 @@ class MultiheadAttention(nn.Module):
         Q, K, V = QKV.chunk(3, dim=-1)
         QK = torch.matmul(Q * self.temperature, K.transpose(-1, -2))
         if mask is not None:
-            mask = mask[None, None, :, :] + QK
+            mask = mask[None, None, :, :] * QK
         W = torch.softmax(QK, dim=-1)
         output = torch.matmul(W, V)
         output = torch.cat([output[:, i]
@@ -241,10 +245,10 @@ class MixerLayer(nn.Module):
         else:
             return "GlobalMixer"
 
-    def forward(self, patches, mask):
-        weight = self.attention(patches, mask=mask)
-        output = self.project(weight)
-        return output
+    def forward(self, x, mask):
+        x = self.attention(x, mask=mask)
+        x = self.project(x)
+        return x
 
 
 class MixerBlock(nn.Module):
@@ -274,11 +278,11 @@ class MixerBlock(nn.Module):
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
     def forward(self, patches, mask):
-        image = self.mixer(patches, mask) + patches
-        image = self.norm_mixer(patches)
-        image = self.mlp(image) + patches
-        image = self.norm_mlp(patches)
-        return image
+        patches = self.mixer(patches, mask) + patches
+        patches = self.norm_mixer(patches)
+        patches = self.mlp(patches) + patches
+        patches = self.norm_mlp(patches)
+        return patches
 
 
 class FVTRStage(nn.Module):
