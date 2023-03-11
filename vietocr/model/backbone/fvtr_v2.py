@@ -26,7 +26,7 @@ class MaskProvider2d(nn.Module):
     @torch.no_grad()
     def forward(self, x):
         kh, kw = self.locality
-        kernel = torch.ones(1, 1, kh, kw, dtype=torch.long, device=x.device)
+        kernel = torch.ones(1, 1, kh, kw, dtype=torch.bool, device=x.device)
         mask = kernel.repeat([x.size(-2), x.size(-1), 1, 1])
 
         # H W kh kw -> H kh W kw
@@ -40,6 +40,10 @@ class MaskProvider2d(nn.Module):
         # W kw H kh -> H W kh kw
         mask = mask.permute([2, 0, 3, 1])
         mask = mask.flatten(2, 3).flatten(0, 1)
+
+        # bool mask to inf
+        mask_inf = torch.ones_like(mask) * -torch.inf
+        mask = torch.where(mask, mask, mask_inf)
         return mask
 
 
@@ -109,13 +113,12 @@ class FVTREmbedding(nn.Module):
     ):
         super().__init__()
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size, 1),
-            nn.Conv2d(hidden_size, hidden_size,
+            nn.Conv2d(image_channel, hidden_size,
                       kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
             nn.Conv2d(hidden_size, hidden_size,
-                      kernel_size=3, stride=2),
+                      kernel_size=(3, 1), stride=(2, 1)),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
         )
@@ -149,20 +152,22 @@ class CombiningBlock(nn.Module):
         super().__init__()
         # self.attn = SpatialAttention2d()
         self.project = nn.Linear(input_size, output_size)
-        self.mix = nn.Conv1d(input_size, input_size, kernel_size=7)
-        self.act = nn.ReLU()
+        self.mix = nn.Conv1d(input_size, input_size, kernel_size=5, padding=2)
+        self.act = nn.GELU(approximate='tanh')
 
     def forward(self, image):
         # out = self.attn(image) * image
-        # b c h w -> b c wh
+        # b c h w -> b c w
+
+        # edit: no more transpose flatten
         # transpose so that the flatten goes like this
         # 0 3 6
         # 1 4 7
         # 2 5 8
-        out = image.transpose(-1, -2).flatten(-2)
+        out = image.mean(dim=-2)
 
         # Mix information
-        out = self.mix(out)
+        out = out + self.mix(out)
         out = self.act(out)
 
         # b c w -> b w c
@@ -175,128 +180,35 @@ class CombiningBlock(nn.Module):
 class MergingBlock(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
-        self.conv = nn.Conv2d(
-            input_size, output_size,
-            kernel_size=3,
-            padding=1,
-            stride=(2, 1),
-            bias=False
-        )
-        self.norm2 = nn.LayerNorm(output_size)
-
-    def apply_norm(self, norm, x):
-        # b c h w -> b h w c
-        out = x.permute([0, 2, 3, 1])
-        out = norm(out)
-        # b h w c -> b c h w
-        out = out.permute([0, 3, 1, 2])
-        return out
+        self.conv = nn.Conv2d(input_size, output_size,
+                              kernel_size=3, stride=(2, 1))
+        self.norm = nn.InstanceNorm2d(output_size)
 
     def forward(self, x):
         out = self.conv(x)
-        self.apply_norm(self.norm2, out)
+        out = self.norm(out)
         return out
-
-
-class LocalAttention(nn.Module):
-    def __init__(self, hidden_size, L: int, num_attention_heads: int):
-        super().__init__()
-        self.num_attention_heads = num_attention_heads
-        self.Q = nn.Parameter(torch.rand(
-            1, num_attention_heads, L, 1, hidden_size))
-        self.W = nn.Parameter(torch.rand(L))
-        self.K = nn.Linear(hidden_size, hidden_size *
-                           num_attention_heads, bias=False)
-        self.V = nn.Linear(hidden_size, hidden_size *
-                           num_attention_heads, bias=False)
-
-    def chunk(self, x):
-        x = torch.stack(x.chunk(self.num_attention_heads, dim=-1), dim=1)
-        return x
-
-    def forward(self, x):
-        # B T D -> B H T D -> B H T 1 D
-        k = self.chunk(self.K(x)).unsqueeze(2)
-        v = self.chunk(self.V(x))
-
-        # 1 H L 1 D -> B H L T D
-        q, _ = torch.broadcast_tensors(self.Q, k)
-
-        # B H L T T
-        qk = torch.matmul(q, k.transpose(-1, -2))
-
-        # B H T T L
-        qk = qk.permute((0, 1, 3, 4, 2))
-
-        # B H T T
-        qk = qk.matmul(self.W)
-        qk = torch.softmax(qk, dim=-1)
-
-        # B H T T, B H T D -> B H T D
-        output = qk.matmul(v)
-        # B H T D -> B T D
-        output = output.mean(dim=1)
-        return output
-
-
-class LocalAttention(nn.Module):
-    def __init__(self, hidden_size, L: int, num_attention_heads: int):
-        super().__init__()
-        self.L = L
-        self.num_attention_heads = num_attention_heads
-        self.temperature = 1 / hidden_size**0.5
-        self.Q = nn.Parameter(torch.rand(
-            num_attention_heads, L, 1, hidden_size))
-        self.W = nn.Parameter(torch.rand(1, 1, L, 1))
-        self.K = nn.Linear(hidden_size, hidden_size *
-                           num_attention_heads, bias=False)
-        self.V = nn.Linear(hidden_size, hidden_size *
-                           num_attention_heads, bias=False)
-
-    def chunk(self, x):
-        x = torch.stack(x.chunk(self.num_attention_heads, dim=-1), dim=1)
-        return x
-
-    def forward(self, x):
-        k = self.chunk(self.K(x))
-        v = self.chunk(self.V(x))
-
-        allqk = []
-        for i in range(self.L):
-            q = self.Q[:, i]
-            qk = torch.matmul(q * self.temperature, k.transpose(-1, -2))
-            allqk.append(qk)
-        qk = torch.concat(allqk, dim=2)
-        qk = (qk * self.W).sum(dim=2)
-        qk = torch.softmax(qk, dim=-1)
-        output = qk.unsqueeze(-1) * v
-        output = output.mean(dim=1)
-        return output
 
 
 class MultiheadAttention(nn.Module):
     def __init__(self, hidden_size, num_heads):
         super().__init__()
         assert hidden_size % num_heads == 0
-        self.dropout = nn.Dropout(0.1)
         self.num_heads = num_heads
         self.temperature = torch.sqrt(
             1 / torch.tensor(hidden_size // num_heads))
-        self.QKV = nn.Linear(hidden_size, hidden_size * 3, bias=False)
-        self.project = nn.Linear(hidden_size, hidden_size, bias=True)
+        self.QKV = nn.Linear(hidden_size, hidden_size * 3)
 
     def forward(self, x, mask=None):
         QKV = torch.stack(self.QKV(x).chunk(self.num_heads, dim=-1), dim=1)
         Q, K, V = QKV.chunk(3, dim=-1)
         QK = torch.matmul(Q * self.temperature, K.transpose(-1, -2))
-        QK = self.dropout(QK)
         if mask is not None:
-            mask = mask[None, None, :, :] * QK
+            mask = mask[None, None, :, :] + QK
         W = torch.softmax(QK, dim=-1)
         output = torch.matmul(W, V)
         output = torch.cat([output[:, i]
                            for i in range(self.num_heads)], dim=-1)
-        output = self.project(output)
         return output
 
 
@@ -319,7 +231,7 @@ class MixerLayer(nn.Module):
             hidden_size, num_attention_head,
         )
         self.project = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size, bias=False),
+            nn.Linear(hidden_size, hidden_size, bias=True),
             nn.Dropout(dropout)
         )
 
@@ -352,10 +264,10 @@ class MixerBlock(nn.Module):
                                 attn_dropout=attn_dropout,
                                 dropout=dropout)
         self.mlp = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size * 4, bias=False),
-            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size * 4),
+            nn.GELU(approximate="tanh"),
             nn.Dropout(dropout),
-            nn.Linear(hidden_size * 4, hidden_size, bias=False),
+            nn.Linear(hidden_size * 4, hidden_size),
             nn.Dropout(dropout),
         )
         self.norm_mixer = nn.LayerNorm(hidden_size)
@@ -484,7 +396,6 @@ class FVTR(nn.Sequential):
     def forward(self, images: Tensor):
         x = self.embeddings(images)
         for stage in self.stages:
-            # ic(x.shape)
             x = stage(x)
 
         x = self.fc(x)
