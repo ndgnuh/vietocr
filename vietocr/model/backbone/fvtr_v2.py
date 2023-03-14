@@ -116,11 +116,11 @@ class FVTREmbedding(nn.Module):
             nn.Conv2d(image_channel, hidden_size,
                       kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
-            nn.ReLU(True),
+            nn.GELU(),
             nn.Conv2d(hidden_size, hidden_size,
                       kernel_size=(3, 1), stride=(2, 1)),
             nn.InstanceNorm2d(hidden_size),
-            nn.ReLU(True),
+            nn.GELU(),
         )
         self.positional_embedding = PositionalEncoding2D(hidden_size)
 
@@ -148,27 +148,23 @@ class SpatialAttention2d(nn.Module):
 
 
 class CombiningBlock(nn.Module):
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, output_size, num_attention_heads):
         super().__init__()
-        # self.attn = SpatialAttention2d()
         self.project = nn.Linear(input_size, output_size)
-        self.atn = SpatialAttention2d(7)
-        self.act = nn.GELU(approximate='tanh')
+        self.pooling_query = nn.Parameter(torch.rand(1, 1, 1, input_size))
+        self.atn = MultiheadAttention(input_size, num_attention_heads)
+        self.act = nn.GELU()
 
     def forward(self, image):
-        # out = self.attn(image) * image
-        # b c h w -> b c w
+        # b c h w -> b w h c
+        image = image.permute([0, 3, 2, 1])
+        # 1 1 1 c -> b w 1 c
+        Q = self.pooling_query.repeat([image.size(0), image.size(1), 1, 1])
+        # b w 1 c
+        pooled = self.atn(Q, image, image)
 
-        # edit: no more transpose flatten
-        # transpose so that the flatten goes like this
-        # 0 3 6
-        # 1 4 7
-        # 2 5 8
-        image = image + self.atn(image) * image
-        out = image.mean(dim=-2)
-
-        # b c w -> b w c
-        out = out.transpose(-1, -2)
+        # b w 1 c -> b w c
+        out = pooled.squeeze(2)
         out = self.project(out)
         out = self.act(out)
         return out
@@ -178,19 +174,18 @@ class MergingBlock(nn.Module):
     def __init__(self, input_size, output_size):
         super().__init__()
         self.conv = nn.Conv2d(input_size, output_size,
-                              kernel_size=3,
-                              padding=1,
+                              kernel_size=(3, 1),
+                              padding=(1, 0),
                               stride=(2, 1))
-        self.norm = nn.InstanceNorm2d(output_size)
+        self.norm = nn.LayerNorm(output_size)
 
     def forward(self, x):
         out = self.conv(x)
         # n c h w -> n h w c
-        # n c h w -> n h w c
-        # out = out.permute((0, 2, 3, 1))
+        out = out.permute((0, 2, 3, 1))
         out = self.norm(out)
         # n h w c -> n c h w
-        # out = out.permute((0, 3, 1, 2))
+        out = out.permute((0, 3, 1, 2))
         return out
 
 
@@ -201,11 +196,18 @@ class MultiheadAttention(nn.Module):
         self.num_heads = num_heads
         self.temperature = torch.sqrt(
             1 / torch.tensor(hidden_size // num_heads))
-        self.QKV = nn.Linear(hidden_size, hidden_size * 3)
+        self.Q = nn.Linear(hidden_size, hidden_size)
+        self.K = nn.Linear(hidden_size, hidden_size)
+        self.V = nn.Linear(hidden_size, hidden_size)
 
-    def forward(self, x, mask=None):
-        QKV = torch.stack(self.QKV(x).chunk(self.num_heads, dim=-1), dim=1)
-        Q, K, V = QKV.chunk(3, dim=-1)
+    def chunk_heads(self, x):
+        return torch.stack(x.chunk(self.num_heads, dim=-1), dim=1)
+
+    def forward(self, Q, K, V, mask=None):
+        # Inputs: B * T D
+        Q = self.chunk_heads(self.Q(Q))
+        K = self.chunk_heads(self.K(K))
+        V = self.chunk_heads(self.V(V))
         QK = torch.matmul(Q * self.temperature, K.transpose(-1, -2))
         if mask is not None:
             mask = mask[None, None, :, :] * QK
@@ -246,7 +248,7 @@ class MixerLayer(nn.Module):
             return "GlobalMixer"
 
     def forward(self, x, mask):
-        x = self.attention(x, mask=mask)
+        x = self.attention(x, x, x, mask=mask)
         x = self.project(x)
         return x
 
@@ -278,10 +280,10 @@ class MixerBlock(nn.Module):
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
     def forward(self, patches, mask):
-        patches = self.mixer(patches, mask) + patches
         patches = self.norm_mixer(patches)
-        patches = self.mlp(patches) + patches
+        patches = self.mixer(patches, mask) + patches
         patches = self.norm_mlp(patches)
+        patches = self.mlp(patches) + patches
         return patches
 
 
@@ -311,7 +313,11 @@ class FVTRStage(nn.Module):
 
         # merging
         if combine:
-            merging = CombiningBlock(input_size, output_size)
+            merging = CombiningBlock(
+                input_size,
+                output_size,
+                num_attention_head
+            )
         else:
             merging = MergingBlock(input_size, output_size)
 
