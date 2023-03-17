@@ -4,6 +4,7 @@ from torch.nn import functional as F
 from torch import nn, Tensor
 from typing import Tuple, List
 import torch
+import math
 
 
 def skew(orig_x, padding_value):
@@ -45,6 +46,29 @@ class MaskProvider2d(nn.Module):
         # mask_inf = torch.ones_like(mask) * -torch.inf
         # mask = torch.where(mask, mask, mask_inf)
         return mask
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, hidden_size, position_dim=-1):
+        super().__init__()
+        self.position_dim = position_dim
+        inv_freq = torch.exp(torch.arange(0, hidden_size, 2)
+                             * (-math.log(10000.0) / hidden_size))
+        self.register_buffer("inv_freq", inv_freq)
+
+    def get_embed(self, inp):
+        return torch.stack([inp.sin(), inp.cos()], dim=-1).flatten(-2)
+
+    def forward(self, x):
+        position = torch.arange(x.size(self.position_dim),
+                                dtype=x.dtype, device=x.device)
+        position = position.unsqueeze(1)
+        sin = torch.sin(position * self.inv_freq)
+        cos = torch.cos(position * self.inv_freq)
+
+        # time * hidden_size
+        encoding = torch.stack([sin, cos], dim=-1).flatten(-2)
+        return encoding
 
 
 class PositionalEncoding2D(nn.Module):
@@ -110,24 +134,34 @@ class FVTREmbedding(nn.Module):
         max_position_ids: int = 128,
         norm_type='batchnorm',
         patch_embedding_type='default',
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.patch_embedding = nn.Sequential(
             nn.Conv2d(image_channel, hidden_size,
                       kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
-            nn.GELU(),
+            nn.ReLU(True),
             nn.Conv2d(hidden_size, hidden_size,
                       kernel_size=(3, 1), stride=(2, 1)),
             nn.InstanceNorm2d(hidden_size),
-            nn.GELU(),
+            nn.ReLU(True),
         )
-        self.positional_embedding = PositionalEncoding2D(hidden_size)
+        # encode position along the width of the image
+        self.pe = PositionalEncoding(hidden_size, position_dim=3)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
-        pos_embeds = self.positional_embedding(embeddings)
-        embeddings = embeddings + pos_embeds
+        # w * c
+        pe = self.pe(embeddings)
+        # w c -> 1 1 w c
+        pe = pe.unsqueeze(0).unsqueeze(1)
+        # 1 1 w c -> b h w c
+        pe = pe.repeat([embeddings.size(0), embeddings.size(2), 1, 1])
+        # b h w c -> b c h w
+        pe = pe.permute([0, 3, 1, 2])
+        embeddings = self.dropout(pe + embeddings)
         return embeddings
 
 
@@ -148,25 +182,26 @@ class SpatialAttention2d(nn.Module):
 
 
 class CombiningBlock(nn.Module):
-    def __init__(self, input_size, output_size, num_attention_heads):
+    def __init__(self, input_size, output_size, num_attention_heads, dropout=0.1):
         super().__init__()
         self.project = nn.Linear(input_size, output_size)
-        self.pooling_query = nn.Parameter(torch.rand(1, 1, 1, input_size))
-        self.atn = MultiheadAttention(input_size, num_attention_heads)
-        self.act = nn.GELU()
+        self.act = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+
+    def corner_pooling(self, image):
+        w = image.max(dim=-1, keepdim=True).values
+        h = image.max(dim=-2, keepdim=True).values
+        return w + h
 
     def forward(self, image):
-        # b c h w -> b w h c
-        image = image.permute([0, 3, 2, 1])
-        # 1 1 1 c -> b w 1 c
-        Q = self.pooling_query.repeat([image.size(0), image.size(1), 1, 1])
-        # b w 1 c
-        pooled = self.atn(Q, image, image)
+        # b c h w -> b c w
+        out = (image * self.corner_pooling(image)).mean(dim=2)
+        # b c w -> b w c
+        out = out.transpose(1, 2)
 
-        # b w 1 c -> b w c
-        out = pooled.squeeze(2)
         out = self.project(out)
         out = self.act(out)
+        out = self.dropout(out)
         return out
 
 
@@ -189,72 +224,6 @@ class MergingBlock(nn.Module):
         return out
 
 
-class MultiheadAttention(nn.Module):
-    def __init__(self, hidden_size, num_heads):
-        super().__init__()
-        assert hidden_size % num_heads == 0
-        self.num_heads = num_heads
-        self.temperature = torch.sqrt(
-            1 / torch.tensor(hidden_size // num_heads))
-        self.Q = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.K = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.V = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.projection = nn.Linear(hidden_size, hidden_size)
-
-    def chunk_heads(self, x):
-        return torch.stack(x.chunk(self.num_heads, dim=-1), dim=1)
-
-    def forward(self, Q, K, V, mask=None):
-        # Inputs: B * T D
-        Q = self.chunk_heads(self.Q(Q))
-        K = self.chunk_heads(self.K(K))
-        V = self.chunk_heads(self.V(V))
-        QK = torch.matmul(Q * self.temperature, K.transpose(-1, -2))
-        if mask is not None:
-            mask = mask[None, None, :, :] * QK
-        W = torch.softmax(QK, dim=-1)
-        output = torch.matmul(W, V)
-        output = torch.cat([output[:, i]
-                           for i in range(self.num_heads)], dim=-1)
-        output = self.projection(output)
-        return output
-
-
-class MixerLayer(nn.Module):
-    """
-    MixerBlock is either Global Mixer or Local Mixer
-
-    if local = True, input attention mask is ignored
-    """
-
-    def __init__(self,
-                 hidden_size: int,
-                 num_attention_head: int,
-                 local: bool = False,
-                 attn_dropout: float = 0.1,
-                 dropout: float = 0.1):
-        super().__init__()
-        self.local = local
-        self.attention = MultiheadAttention(
-            hidden_size, num_attention_head,
-        )
-        self.project = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size, bias=True),
-            nn.Dropout(dropout)
-        )
-
-    def _get_name(self):
-        if self.local:
-            return "LocalMixer"
-        else:
-            return "GlobalMixer"
-
-    def forward(self, x, mask):
-        x = self.attention(x, x, x, mask=mask)
-        x = self.project(x)
-        return x
-
-
 class MixerBlock(nn.Module):
     def __init__(
         self,
@@ -262,18 +231,20 @@ class MixerBlock(nn.Module):
         num_attention_head: int,
         local: bool = False,
         attn_dropout: float = 0.,
-        dropout: float = 0.,
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.local = local
-        self.mixer = MixerLayer(hidden_size=hidden_size,
-                                num_attention_head=num_attention_head,
-                                local=local,
-                                attn_dropout=attn_dropout,
-                                dropout=dropout)
+        self.mixer = nn.MultiheadAttention(
+            hidden_size,
+            num_attention_head,
+            dropout=attn_dropout,
+            batch_first=True
+        )
+        self.mixer_dropout = nn.Dropout(dropout)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
-            nn.GELU(approximate="tanh"),
+            nn.ReLU(True),
             nn.Dropout(dropout),
             nn.Linear(hidden_size * 4, hidden_size),
             nn.Dropout(dropout),
@@ -281,9 +252,20 @@ class MixerBlock(nn.Module):
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
+    def _get_name(self):
+        if self.local:
+            return "LocalMixer"
+        else:
+            return "GlobalMixer"
+
+    def forward_sa(self, patches, mask):
+        x = self.mixer(patches, patches, patches,
+                       attn_mask=mask, need_weights=False)[0]
+        return self.mixer_dropout(x)
+
     def forward(self, patches, mask):
         patches = self.norm_mixer(patches)
-        patches = self.mixer(patches, mask) + patches
+        patches = self.forward_sa(patches, mask) + patches
         patches = self.norm_mlp(patches)
         patches = self.mlp(patches) + patches
         return patches
@@ -373,8 +355,6 @@ class FVTR(nn.Sequential):
             hidden_size=hidden_sizes[0],
             patch_size=patch_size,
             image_channel=image_channel,
-            max_position_ids=max_position_ids,
-            norm_type=norm_type,
             patch_embedding_type=patch_embedding_type,
         )
 
