@@ -267,6 +267,10 @@ class Trainer(LightningLite):
             annotation_path=training_config['validate_annotation'],
             transform=None
         )
+        self.limit_validation_batches = training_config.get(
+            "limit_validation_batches",
+            None
+        )
 
         # Types of training
         train_steps = [basic_train_step]
@@ -429,7 +433,15 @@ class Trainer(LightningLite):
         all_prs = []
 
         torch.cuda.empty_cache()
-        for batch in tqdm(data, desc="Validating", dynamic_ncols=True):
+        if self.limit_validation_batches is not None:
+            pbar = tqdm(data, desc="Validating",
+                        total=self.limit_validation_batches,
+                        dynamic_ncols=True)
+        else:
+            pbar = tqdm(data, desc="Validating", dynamic_ncols=True)
+        for count, batch in enumerate(pbar):
+            if count == self.limit_validation_batches:
+                break
             images, labels, target_lengths = batch
 
             outputs = model(images, labels)
