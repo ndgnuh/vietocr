@@ -213,7 +213,7 @@ class Trainer(LightningLite):
             self.model.parameters(),
             lr=training_config['learning_rate'],
             betas=(0.9, 0.98),
-            weight_decay=0.1,
+            weight_decay=0.01,
             eps=1e-09
         )
         lr_scheduler_config = training_config.get('lr_scheduler', None)
@@ -472,7 +472,9 @@ class Trainer(LightningLite):
         self.run()
 
     def clip_grad(self):
-        nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
+        if self.clip_grad_norm is not None:
+            nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.clip_grad_norm)
 
 
 @dataclass
