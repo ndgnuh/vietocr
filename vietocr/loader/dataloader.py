@@ -343,7 +343,7 @@ def build_dataloader(
     image_max_width: int,
     vocab,
     transform: Optional[Callable] = None,
-    shuffle: Optional[bool] = False,
+    shuffle: Optional[bool] = True,
     batch_size: Optional[int] = 1,
     num_workers: Optional[int] = None,
     curriculum: Optional[bool] = True,
