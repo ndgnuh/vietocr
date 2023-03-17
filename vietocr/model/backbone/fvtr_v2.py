@@ -196,9 +196,10 @@ class MultiheadAttention(nn.Module):
         self.num_heads = num_heads
         self.temperature = torch.sqrt(
             1 / torch.tensor(hidden_size // num_heads))
-        self.Q = nn.Linear(hidden_size, hidden_size)
-        self.K = nn.Linear(hidden_size, hidden_size)
-        self.V = nn.Linear(hidden_size, hidden_size)
+        self.Q = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.K = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.V = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.projection = nn.Linear(hidden_size, hidden_size)
 
     def chunk_heads(self, x):
         return torch.stack(x.chunk(self.num_heads, dim=-1), dim=1)
@@ -215,6 +216,7 @@ class MultiheadAttention(nn.Module):
         output = torch.matmul(W, V)
         output = torch.cat([output[:, i]
                            for i in range(self.num_heads)], dim=-1)
+        output = self.projection(output)
         return output
 
 
