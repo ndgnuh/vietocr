@@ -29,6 +29,17 @@ from typing import List, Union
 # os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
+def batch_stacking(batch, p):
+    if random.uniform(0, 1) > p:
+        return batch
+    images, targets, target_lengths = batch
+    target_lengths = targets.size(-1) + target_lengths.chunk(2, dim=0)[1]
+    # Stack data width wise
+    images = torch.cat(images.chunk(2, dim=0), dim=-1)
+    targets = torch.cat(targets.chunk(2, dim=0), dim=-1)
+    return (images, targets, target_lengths)
+
+
 def infer_steps_from_epochs(
     annotation_files: Union[str, List[str]],
     num_epochs: int,
@@ -75,11 +86,12 @@ def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: 
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
     lite.backward(loss)
+    lite.clip_grad()
     optimizer.step()
     return loss
 
 
-def adversarial_train_step(
+def fgsm_traing_step(
     lite,
     model,
     batch,
@@ -89,43 +101,34 @@ def adversarial_train_step(
 ):
     model.train()
 
-    # Generating gradient on the input images
-    # Using requires grad here because backward doesn't work in eval mode
-    for p in model.parameters():
-        p.requires_grad = False
-    optimizer.zero_grad()
+    # Generating the fgsm attack
     images, labels, target_lengths = batch
-    images.requires_grad = True
-    outputs = model(images, labels)
+    delta = torch.zeros_like(images, device=images.device, requires_grad=True)
+    outputs = model((images + delta), labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
-    loss.backward()
-    data_grad = images.grad
-    for p in model.parameters():
-        p.requires_grad = True
-    images.requires_grad = False
+    lite.backward(loss)
 
-    # Generating adversarial examples
-    sign_data_grad = data_grad.sign()
-    # Create the perturbed image by adjusting each pixel of the input image
-    # 1% to 5% noise
-    epsilon = random.uniform(0.01, 0.05)
-    perturbed_images = images + epsilon * sign_data_grad
-    # Adding clipping to maintain [0,1] range
-    perturbed_images = torch.clamp(perturbed_images, 0, 1)
+    # Perturbation level
+    epsilon = random.uniform(0.01, 0.1)
+    delta = epsilon * delta.grad.detach().sign()
 
-    if os.environ.get("DEBUG", "") != "":
+    # Train on the k
+    perturbed_images = torch.clamp(images + delta, 0, 1)
+    outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
+    loss = criterion(outputs, labels, target_lengths)
+    optimizer.zero_grad()
+    lite.backward(loss)
+    lite.clip_grad()
+    optimizer.step()
+
+    # WRITE THE IMAGE TO DEBUG
+    if os.environ.get("DEBUG", "").strip() != "":
         from torchvision.transforms import functional as TF
         for i, image in enumerate(perturbed_images):
             dbg_image = torch.cat((images[i], image), dim=-1)
             dbg_image = TF.to_pil_image(dbg_image)
             dbg_image.save(f"debug/adv/{i:03d}.png")
 
-    # Train on perturbed image
-    optimizer.zero_grad()
-    outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
-    loss = criterion(outputs, labels, target_lengths)
-    lite.backward(loss)
-    optimizer.step()
     return loss
 
 
@@ -205,10 +208,12 @@ class Trainer(LightningLite):
         else:
             self.criterion = losses.CTCLoss(vocab=self.vocab)
 
+        # Optimization
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=training_config['learning_rate'],
             betas=(0.9, 0.98),
+            weight_decay=0.1,
             eps=1e-09
         )
         lr_scheduler_config = training_config.get('lr_scheduler', None)
@@ -225,6 +230,7 @@ class Trainer(LightningLite):
                 self.optimizer,
                 **lr_scheduler_config
             )
+        self.clip_grad_norm = training_config.get("clip_grad_norm", 5)
 
         # Freezing
         frozen = training_config.get("freeze", [])
@@ -265,11 +271,17 @@ class Trainer(LightningLite):
         # Types of training
         train_steps = [basic_train_step]
         for step in training_config.get("train_steps", []):
-            if step == "adversarial" or step == "adv":
-                train_steps.append(adversarial_train_step)
+            if step == "fgsm":
+                train_steps.append(fgsm_traing_step)
 
                 print("=== USING ADVERSARIAL TRAINING STEP ===")
         self.train_steps = train_steps
+
+        # Stacking data for variety
+        self.batch_stacking_probs = training_config.get(
+            "batch_stacking_probs", -1)
+        if self.batch_stacking_probs > 0:
+            assert training_config["batch_size"] % 2 == 0, "Batch stacking is enabled, batch size needs to be even"
 
     def run(self):
         train_data = self.setup_dataloaders(self.train_data)
@@ -289,6 +301,7 @@ class Trainer(LightningLite):
         lr_scheduler = self.lr_scheduler
         criterion = self.criterion
         tf_scheduler = self.tfs
+        batch_stacking_probs = self.batch_stacking_probs
 
         # 1 indexing in this case is better
         # - don't have to check for step > 0
@@ -304,24 +317,26 @@ class Trainer(LightningLite):
         while step < self.total_steps - 1:
             while True:
                 step, batch = next(data_gen)
+
+                batch = batch_stacking(batch, batch_stacking_probs)
                 w = batch[0].shape[-1]  # image width
 
                 # Training step
                 with gpu_time:
                     teacher_forcing = tf_scheduler.step()
-                    for train_step in self.train_steps:
-                        loss = train_step(
-                            self,
-                            model,
-                            batch,
-                            optimizer=optimizer,
-                            criterion=criterion,
-                            teacher_forcing=teacher_forcing,
-                        )
-                        try:
-                            train_loss.append(loss.item())
-                        except Exception:
-                            train_loss.append(loss)
+                    train_step = random.choice(self.train_steps)
+                    loss = train_step(
+                        self,
+                        model,
+                        batch,
+                        optimizer=optimizer,
+                        criterion=criterion,
+                        teacher_forcing=teacher_forcing,
+                    )
+                    try:
+                        train_loss.append(loss.item())
+                    except Exception:
+                        train_loss.append(loss)
 
                 lr_scheduler.step()
 
@@ -455,6 +470,9 @@ class Trainer(LightningLite):
 
     def train(self):
         self.run()
+
+    def clip_grad(self):
+        nn.utils.clip_grad_norm_(self.model.parameters(), self.clip_grad_norm)
 
 
 @dataclass
