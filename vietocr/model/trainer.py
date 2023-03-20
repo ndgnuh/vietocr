@@ -213,17 +213,18 @@ class Trainer(LightningLite):
             self.model.parameters(),
             lr=training_config['learning_rate'],
             betas=(0.9, 0.98),
-            weight_decay=0.01,
-            eps=1e-09
+            weight_decay=1e-4,
+            eps=1e-03
         )
         lr_scheduler_config = training_config.get('lr_scheduler', None)
         if lr_scheduler_config is None:
-            self.lr_scheduler = lr_scheduler.OneCycleLR(
-                self.optimizer,
-                total_steps=training_config['total_steps'],
-                max_lr=training_config['learning_rate'],
-                pct_start=0.1,
-            )
+            self.lr_scheduler = None
+            # self.lr_scheduler = lr_scheduler.OneCycleLR(
+            #     self.optimizer,
+            #     total_steps=training_config['total_steps'],
+            #     max_lr=training_config['learning_rate'],
+            #     pct_start=0.1,
+            # )
         else:
             name = lr_scheduler_config.pop("name")
             self.lr_scheduler = getattr(lr_scheduler, name)(
@@ -342,7 +343,8 @@ class Trainer(LightningLite):
                     except Exception:
                         train_loss.append(loss)
 
-                lr_scheduler.step()
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
 
                 if step % validate_every == 0:
                     metrics = self.validate()
