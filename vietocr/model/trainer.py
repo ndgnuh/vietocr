@@ -85,7 +85,8 @@ def basic_train_step(trainer, model, batch, criterion, optimizer, teacher_forcin
     # ic(images.shape)
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
-    trainer.fabric.backward(loss)
+    trainer.fabric.backward(loss,
+                            create_graph=getattr(optimizer, 'create_graph', False))
     trainer.clip_grad()
     optimizer.step()
     return loss
@@ -212,12 +213,11 @@ class Trainer:
             self.criterion = losses.CTCLoss(vocab=self.vocab)
 
         # Optimization
-        self.optimizer = optim.AdamW(
+        from .optimizers import get_optimizer
+        self.optimizer = get_optimizer(
+            training_config.get("optimizer", "adam"),
             self.model.parameters(),
             lr=training_config['learning_rate'],
-            betas=(0.9, 0.98),
-            weight_decay=1e-4,
-            eps=1e-03
         )
         lr_scheduler_config = training_config.get('lr_scheduler', None)
         if lr_scheduler_config is None:
