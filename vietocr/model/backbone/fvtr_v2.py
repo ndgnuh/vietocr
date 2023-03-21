@@ -129,11 +129,12 @@ class FVTREmbedding(nn.Module):
     def __init__(
         self,
         hidden_size: int,
+        position_ids: int,
         image_channel: int = 3,
         patch_size: int = 4,
-        max_position_ids: int = 128,
         norm_type='batchnorm',
         patch_embedding_type='default',
+        learnable_pe=True,
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -148,19 +149,27 @@ class FVTREmbedding(nn.Module):
             nn.ReLU(True),
         )
         # encode position along the width of the image
-        self.pe = PositionalEncoding(hidden_size, position_dim=3)
+        self.learnable_pe = learnable_pe
+        if learnable_pe:
+            self.pe = nn.Parameter(torch.zeros(1, 1, *position_ids))
+        else:
+            self.pe = PositionalEncoding(hidden_size, position_dim=3)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
         # w * c
-        pe = self.pe(embeddings)
-        # w c -> 1 1 w c
-        pe = pe.unsqueeze(0).unsqueeze(1)
-        # 1 1 w c -> b h w c
-        pe = pe.repeat([embeddings.size(0), embeddings.size(2), 1, 1])
-        # b h w c -> b c h w
-        pe = pe.permute([0, 3, 1, 2])
+        if self.learnable_pe:
+            pe = TF.resize(self.pe, (embeddings.size(-2), embeddings.size(-1)))
+            pe = pe.repeat([embeddings.size(0), embeddings.size(1), 1, 1])
+        else:
+            pe = self.pe(embeddings)
+            # w c -> 1 1 w c
+            pe = pe.unsqueeze(0).unsqueeze(1)
+            # 1 1 w c -> b h w c
+            pe = pe.repeat([embeddings.size(0), embeddings.size(2), 1, 1])
+            # b h w c -> b c h w
+            pe = pe.permute([0, 3, 1, 2])
         embeddings = self.dropout(pe + embeddings)
         return embeddings
 
@@ -341,7 +350,8 @@ class FVTR(nn.Sequential):
                  locality: Tuple[int, int] = (9, 9),
                  patch_size: int = 4,
                  image_channel: int = 3,
-                 max_position_ids: int = 128,
+                 position_ids: int = (8, 64),
+                 learnable_pe: bool = True,
                  norm_type: str = 'batchnorm',
                  use_rnn: bool = False,
                  patch_embedding_type: str = 'default'):
@@ -355,6 +365,8 @@ class FVTR(nn.Sequential):
             hidden_size=hidden_sizes[0],
             patch_size=patch_size,
             image_channel=image_channel,
+            position_ids=position_ids,
+            learnable_pe=learnable_pe,
             patch_embedding_type=patch_embedding_type,
         )
 
