@@ -11,18 +11,18 @@ from ..tool.stats import (
 from ..tool.translate import build_model
 from .. import const
 from . import losses
-from pytorch_lightning.lite import LightningLite
 from functools import partial
 from torch import nn, optim
 from torch.optim import lr_scheduler
 from tqdm import tqdm, trange
 from os import path
 from dataclasses import dataclass
+from datetime import datetime
+from typing import List, Union
+import lightning as L
 import torch
 import random
 import os
-from datetime import datetime
-from typing import List, Union
 
 # fix: https://github.com/ndgnuh/vietocr/issues/2
 # ref: https://pytorch.org/docs/stable/notes/cuda.html#cuda-memory-management
@@ -78,21 +78,21 @@ def cycle(total_steps, dataloader):
                 return
 
 
-def basic_train_step(lite, model, batch, criterion, optimizer, teacher_forcing: bool = False):
+def basic_train_step(trainer, model, batch, criterion, optimizer, teacher_forcing: bool = False):
     model.train()
     optimizer.zero_grad(set_to_none=True)
     images, labels, target_lengths = batch
     # ic(images.shape)
     outputs = model(images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
-    lite.backward(loss)
-    lite.clip_grad()
+    trainer.fabric.backward(loss)
+    trainer.clip_grad()
     optimizer.step()
     return loss
 
 
 def fgsm_traing_step(
-    lite,
+    trainer,
     model,
     batch,
     criterion,
@@ -106,7 +106,7 @@ def fgsm_traing_step(
     delta = torch.zeros_like(images, device=images.device, requires_grad=True)
     outputs = model((images + delta), labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
-    lite.backward(loss)
+    trainer.fabric.backward(loss)
 
     # Perturbation level
     epsilon = random.uniform(0.01, 0.1)
@@ -117,8 +117,8 @@ def fgsm_traing_step(
     outputs = model(perturbed_images, labels, teacher_forcing=teacher_forcing)
     loss = criterion(outputs, labels, target_lengths)
     optimizer.zero_grad()
-    lite.backward(loss)
-    lite.clip_grad()
+    trainer.fabric.backward(loss)
+    trainer.clip_grad()
     optimizer.step()
 
     # WRITE THE IMAGE TO DEBUG
@@ -132,7 +132,7 @@ def fgsm_traing_step(
     return loss
 
 
-class Trainer(LightningLite):
+class Trainer:
     def __init__(self, config):
         training_config = config['training']
         if 'accelerator' in training_config:
@@ -147,7 +147,10 @@ class Trainer(LightningLite):
         if "matmul_precision" in training_config:
             torch.set_float32_matmul_precision('medium')
 
-        super().__init__(accelerator=accelerator, precision=precision)
+        self.fabric = L.Fabric(
+            accelerator=accelerator,
+            precision=precision
+        )
 
         # PRNG seeding for debug
         seed = os.environ.get(
@@ -289,10 +292,10 @@ class Trainer(LightningLite):
             assert training_config["batch_size"] % 2 == 0, "Batch stacking is enabled, batch size needs to be even"
 
     def run(self):
-        train_data = self.setup_dataloaders(self.train_data)
+        train_data = self.fabric.setup_dataloaders(self.train_data)
         print("Number of training batches:", len(train_data))
         print("Number of validation batches:", len(self.validate_data))
-        model, optimizer = self.setup(self.model, self.optimizer)
+        model, optimizer = self.fabric.setup(self.model, self.optimizer)
 
         metrics = {}
 
@@ -422,8 +425,8 @@ class Trainer(LightningLite):
 
     @torch.no_grad()
     def validate(self):
-        data = self.setup_dataloaders(self.validate_data)
-        model = self.setup(self.model)
+        data = self.fabric.setup_dataloaders(self.validate_data)
+        model = self.fabric.setup(self.model)
         model.eval()
 
         val_loss = AverageStatistic()

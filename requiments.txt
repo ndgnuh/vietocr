@@ -13,4 +13,5 @@ einops
 unidecode
 icecream
 albumentations
-pytorch_lightning
+lightning
+onnx
