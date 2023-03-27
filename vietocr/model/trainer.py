@@ -338,7 +338,7 @@ class Trainer:
                         model,
                         batch,
                         optimizer=optimizer,
-                        criterion=criterion,
+                        criterion=criterion.train(),
                         teacher_forcing=teacher_forcing,
                     )
                     try:
@@ -432,7 +432,7 @@ class Trainer:
         val_loss = AverageStatistic()
         full_seq = AverageStatistic()
         per_char = AverageStatistic()
-        criterion = self.criterion
+        criterion = self.criterion.eval()
 
         all_gts = []
         all_prs = []
