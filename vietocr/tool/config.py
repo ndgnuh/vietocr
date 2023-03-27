@@ -9,19 +9,14 @@ config_dir = path.normpath(config_dir)
 
 url_config = {
     'fvtr_t': 'fvtr_t.yml',
-    'fvtr_t_c3rnn': 'fvtr_t_c3rnn.yml',
+    'fvtr_v2_t@vn': 'fvtr_v2_t@vn.yml',
+    'fvtr_v2_t@kr': 'fvtr_v2_t@kr.yml',
     'inception_v3_seq2seq': 'inception_v3_s2s.yml',
     'inception_v3_seq2seq_large': 'inception_v3_s2s_large.yml',
     'mobilenet_v3l_seq2seq': 'mv3l_s2s.yml',
     'resnet50_seq2seq': 'resnet50_s2s.yml',
     'vgg_transformer': 'vgg-transformer.yml',
     'vgg_seq2seq': 'vgg-seq2seq.yml',
-    # 'svtr-t': 'svtr-t-seq2seq.yml',
-    # 'resnet_transformer': 'resnet_transformer.yml',
-    # 'resnet_fpn_transformer': 'resnet_fpn_transformer.yml',
-    # 'vgg_convseq2seq': 'vgg_convseq2seq.yml',
-    # 'vgg_decoderseq2seq': 'vgg_decoderseq2seq.yml',
-    # 'base': 'base.yml',
 }
 
 
