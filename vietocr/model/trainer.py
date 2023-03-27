@@ -19,6 +19,7 @@ from os import path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Union
+from functools import lru_cache
 import lightning as L
 import torch
 import random
@@ -29,14 +30,25 @@ import os
 # os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 
-def batch_stacking(batch, p):
-    if random.uniform(0, 1) > p:
-        return batch
-    images, targets, target_lengths = batch
-    target_lengths = targets.size(-1) + target_lengths.chunk(2, dim=0)[1]
-    # Stack data width wise
-    images = torch.cat(images.chunk(2, dim=0), dim=-1)
-    targets = torch.cat(targets.chunk(2, dim=0), dim=-1)
+@lru_cache
+def get_divisors(bsize):
+    x = []
+    for i in range(1, bsize // 2 + 1):
+        if bsize % i == 0:
+            x.append(i)
+    return x
+
+
+def stack_batch(images, targets, target_lengths):
+    split_size = random.choice(get_divisors(images.shape[0]))
+    print(split_size)
+    if split_size == 1:
+        return images, targets, target_lengths
+
+    target_lengths = targets.size(-1) * (split_size - 1) + \
+        target_lengths.chunk(split_size, dim=0)[1]
+    images = torch.cat(images.chunk(split_size, dim=0), dim=-1)
+    targets = torch.cat(targets.chunk(split_size, dim=0), dim=-1)
     return (images, targets, target_lengths)
 
 
@@ -257,7 +269,7 @@ class Trainer:
             num_workers=training_config.get('num_workers', 1),
             curriculum=training_config.get('curriculum', True),
             shuffle=training_config.get('shuffle', True),
-            letterbox=config['image_letterbox'],
+            letterbox=config.get('image_letterbox', False),
             align_width=training_config.get('align_width', 10),
             shift_target=True if config['type'] == 's2s' else False,
             limit_batch_per_size=training_config.get(
@@ -286,10 +298,7 @@ class Trainer:
         self.train_steps = train_steps
 
         # Stacking data for variety
-        self.batch_stacking_probs = training_config.get(
-            "batch_stacking_probs", -1)
-        if self.batch_stacking_probs > 0:
-            assert training_config["batch_size"] % 2 == 0, "Batch stacking is enabled, batch size needs to be even"
+        self.stack_batch = training_config.get("stack_batch", False)
 
     def run(self):
         train_data = self.fabric.setup_dataloaders(self.train_data)
@@ -309,7 +318,6 @@ class Trainer:
         lr_scheduler = self.lr_scheduler
         criterion = self.criterion
         tf_scheduler = self.tfs
-        batch_stacking_probs = self.batch_stacking_probs
 
         # 1 indexing in this case is better
         # - don't have to check for step > 0
@@ -326,7 +334,8 @@ class Trainer:
             while True:
                 step, batch = next(data_gen)
 
-                batch = batch_stacking(batch, batch_stacking_probs)
+                if self.stack_batch:
+                    batch = stack_batch(*batch)
                 w = batch[0].shape[-1]  # image width
 
                 # Training step
