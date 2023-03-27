@@ -133,8 +133,7 @@ class FVTREmbedding(nn.Module):
         image_channel: int = 3,
         patch_size: int = 4,
         norm_type='batchnorm',
-        patch_embedding_type='default',
-        learnable_pe=True,
+        pe_type='learnable',
         dropout: float = 0.1,
     ):
         super().__init__()
@@ -149,23 +148,32 @@ class FVTREmbedding(nn.Module):
             nn.ReLU(True),
         )
         # encode position along the width of the image
-        self.learnable_pe = learnable_pe
-        if learnable_pe:
+        self.pe_type = pe_type
+        if pe_type == 'learnable':
             self.pe = nn.Parameter(torch.zeros(1, 1, *position_ids))
-        else:
+        elif pe_type == 'sin_2d':
+            self.pe = PositionalEncoding2D(hidden_size)
+        elif pe_type == 'sin_1d':
             self.pe = PositionalEncoding(hidden_size, position_dim=3)
+        elif pe_type == 'none':
+            self.pe = None
+        else:
+            raise ValueError(
+                f"Unsupported position embedding types {pe_type}: learnable, sin_2d, sin_1d, none")
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
         # w * c
-        if self.learnable_pe:
+        if self.pe_type == 'learnable':
             pe = TF.resize(
                 self.pe,
                 (embeddings.size(-2), embeddings.size(-1)),
                 antialias=True,
             )
             pe = pe.repeat([embeddings.size(0), embeddings.size(1), 1, 1])
+        elif self.pe is None:
+            pe = 0
         else:
             pe = self.pe(embeddings)
             # w c -> 1 1 w c
@@ -355,7 +363,7 @@ class FVTR(nn.Sequential):
                  patch_size: int = 4,
                  image_channel: int = 3,
                  position_ids: int = (8, 64),
-                 learnable_pe: bool = True,
+                 pe_type: bool = 'learnable',
                  norm_type: str = 'batchnorm',
                  use_rnn: bool = False,
                  patch_embedding_type: str = 'default'):
@@ -370,7 +378,7 @@ class FVTR(nn.Sequential):
             patch_size=patch_size,
             image_channel=image_channel,
             position_ids=position_ids,
-            learnable_pe=learnable_pe,
+            pe_type=pe_type,
             patch_embedding_type=patch_embedding_type,
         )
 
