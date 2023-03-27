@@ -160,7 +160,11 @@ class FVTREmbedding(nn.Module):
         embeddings = self.patch_embedding(image)
         # w * c
         if self.learnable_pe:
-            pe = TF.resize(self.pe, (embeddings.size(-2), embeddings.size(-1)))
+            pe = TF.resize(
+                self.pe,
+                (embeddings.size(-2), embeddings.size(-1)),
+                antialias=True,
+            )
             pe = pe.repeat([embeddings.size(0), embeddings.size(1), 1, 1])
         else:
             pe = self.pe(embeddings)
