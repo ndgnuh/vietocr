@@ -5,42 +5,7 @@ from typing import Tuple, List
 from torch.nn import functional as F
 import torch
 
-
-def skew(orig_x, padding_value):
-    x = orig_x
-    '''shift every row 1 step to right converting columns into diagonals'''
-    rest, H, W = x.shape[:-2], x.size(-2), x.size(-1)
-    x = F.pad(x, (0, H), value=padding_value)
-    x = x.reshape(*rest, -1)  # B x C x ML+MM+M
-    x = x[..., :-H]  # B x C x ML+MM
-    x = x.reshape(*rest, H, H + W - 1)  # B x C, M x L+M
-    x = x[..., (W//2):-(W//2)+(W % 2-1)]
-    return x
-
-
-class MaskProvider2d(nn.Module):
-    def __init__(self, locality):
-        super().__init__()
-        self.locality = locality
-
-    @torch.no_grad()
-    def forward(self, x):
-        kh, kw = self.locality
-        kernel = torch.ones(1, 1, kh, kw, dtype=torch.bool, device=x.device)
-        mask = kernel.repeat([x.size(-2), x.size(-1), 1, 1])
-
-        # H W kh kw -> H kh W kw
-        mask = mask.permute([0, 2, 1, 3])
-        mask = skew(mask, 0)
-
-        # H kh W kw -> W kw H kh
-        mask = mask.permute([2, 3, 0, 1])
-        mask = skew(mask, 0)
-
-        # W kw H kh -> H W kh kw
-        mask = mask.permute([2, 0, 3, 1])
-        mask = mask.flatten(2, 3).flatten(0, 1)
-        return mask
+from ..utils import LocalAttentionMaskProvider2d
 
 
 def init_mask(image: Tensor,
@@ -241,6 +206,9 @@ class MixerLayer(nn.Module):
             return "GlobalMixer"
 
     def forward(self, patch_embed, attention_mask):
+        # Faulty behaviour, but works with the old weight
+        if self.local:
+            attention_mask = None
         weight, score = self.attention(
             patch_embed,
             patch_embed,
@@ -304,7 +272,7 @@ class FVTRStage(nn.Module):
         super().__init__()
 
         mixing_blocks = nn.ModuleList()
-        self.mask_provider = MaskProvider2d([7, 11])
+        self.mask_provider = LocalAttentionMaskProvider2d([7, 11])
         for local in permutation:
             block = MixerBlock(
                 hidden_size=input_size,
