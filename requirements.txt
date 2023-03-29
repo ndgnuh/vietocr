@@ -15,3 +15,5 @@ icecream
 albumentations
 lightning
 onnx
+tensorboardX
+crc32c

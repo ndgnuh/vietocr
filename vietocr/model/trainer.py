@@ -71,7 +71,8 @@ def infer_steps_from_epochs(
 
 def get_logger(log_dir):
     try:
-        from torch.utils.tensorboard import SummaryWriter
+        # from torch.utils.tensorboard import SummaryWriter
+        from tensorboardX import SummaryWriter
         return SummaryWriter(log_dir=log_dir, flush_secs=1)
     except Exception:
         print("Install tensorboard to log")
