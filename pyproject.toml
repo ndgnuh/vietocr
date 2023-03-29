@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "black-vietocr"
-version="0.4.14"
+version="0.4.15"
 description = "Sequence to sequence? text recognition. Fork of VietOCR"
 readme = "README.md"
 requires-python = ">=3.7"
