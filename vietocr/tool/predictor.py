@@ -38,7 +38,7 @@ class Predictor:
         probs, indices = torch.softmax(output, dim=-1).max(dim=-1)
         probs = probs.numpy()
         indices = indices.numpy()
-        results = self.vocab.batch_decode(indices)
+        results = self.vocab.batch_decode(indices.tolist())
         scores = probs.mean(axis=-1).tolist()
         if returns_map:
             return results, scores, output
