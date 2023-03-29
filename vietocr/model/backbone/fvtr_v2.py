@@ -366,7 +366,7 @@ class FVTR(nn.Sequential):
                  pe_type: bool = 'learnable',
                  norm_type: str = 'batchnorm',
                  use_rnn: bool = False,
-                 patch_embedding_type: str = 'default'):
+                 ):
         super().__init__()
         self.locality = locality
         self.patch_size = patch_size
@@ -379,7 +379,6 @@ class FVTR(nn.Sequential):
             image_channel=image_channel,
             position_ids=position_ids,
             pe_type=pe_type,
-            patch_embedding_type=patch_embedding_type,
         )
 
         # FVTR Stages
