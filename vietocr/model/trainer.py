@@ -41,7 +41,6 @@ def get_divisors(bsize):
 
 def stack_batch(images, targets, target_lengths):
     split_size = random.choice(get_divisors(images.shape[0]))
-    print(split_size)
     if split_size == 1:
         return images, targets, target_lengths
 
@@ -73,7 +72,7 @@ def infer_steps_from_epochs(
 def get_logger(log_dir):
     try:
         from torch.utils.tensorboard import SummaryWriter
-        return SummaryWriter(log_dir=log_dir)
+        return SummaryWriter(log_dir=log_dir, flush_secs=1)
     except Exception:
         print("Install tensorboard to log")
         return None
@@ -334,9 +333,9 @@ class Trainer:
             while True:
                 step, batch = next(data_gen)
 
+                w = batch[0].shape[-1]  # image width
                 if self.stack_batch:
                     batch = stack_batch(*batch)
-                w = batch[0].shape[-1]  # image width
 
                 # Training step
                 with gpu_time:
