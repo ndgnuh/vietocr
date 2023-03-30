@@ -2,10 +2,13 @@ from torchvision.transforms import functional as TF
 from einops.layers.torch import Rearrange, Reduce
 from torch import nn, Tensor
 from typing import Tuple, List
-from torch.nn import functional as F
 import torch
 
-from ..utils import LocalAttentionMaskProvider2d
+
+@torch.no_grad()
+def get_output_size(m, shape):
+    x = torch.zeros(shape)
+    return m(x).shape
 
 
 def init_mask(image: Tensor,
@@ -206,7 +209,6 @@ class MixerLayer(nn.Module):
             return "GlobalMixer"
 
     def forward(self, patch_embed, attention_mask):
-        # Faulty behaviour, but works with the old weight
         if self.local:
             attention_mask = None
         weight, score = self.attention(
@@ -229,7 +231,6 @@ class MixerBlock(nn.Module):
         prelayer_norm: bool = False
     ):
         super().__init__()
-        self.local = local
         self.prelayer_norm = prelayer_norm
         self.mixer = MixerLayer(hidden_size=hidden_size,
                                 num_attention_head=num_attention_head,
@@ -272,13 +273,12 @@ class FVTRStage(nn.Module):
         super().__init__()
 
         mixing_blocks = nn.ModuleList()
-        self.mask_provider = LocalAttentionMaskProvider2d([7, 11])
         for local in permutation:
             block = MixerBlock(
                 hidden_size=input_size,
                 num_attention_head=num_attention_head,
                 prelayer_norm=True,
-                local=local
+                local=local,
             )
             mixing_blocks.append(block)
 
@@ -291,18 +291,14 @@ class FVTRStage(nn.Module):
         self.mixing_blocks = mixing_blocks
         self.merging = merging
 
-    def forward(self, x: Tensor):
-        mask = self.mask_provider(x)
+    def forward(self, x: Tensor, attention_mask: Tensor):
         c, h, w = x.shape[-3:]
         # b c h w -> b w h c -> h (w h) c
         x = x.transpose(-1, -3)
         x = x.reshape(-1, (w * h), c)
 
         for block in self.mixing_blocks:
-            if block.local:
-                x = block(x, attention_mask=mask)
-            else:
-                x = block(x, attention_mask=None)
+            x = block(x, attention_mask)
 
         # b (w h) c -> b w h c -> b c h w
         x = x.reshape(-1, w, h, c)
@@ -365,10 +361,16 @@ class FVTR(nn.Sequential):
         self.stages = nn.ModuleList(stages)
         self.fc = fc
 
+    @staticmethod
+    def init_attention_mask(images, locality, patch_size=1):
+        # Convenient calls from FVTR model
+        return init_mask(images, locality, patch_size=1)
+
     def forward(self, images: Tensor):
         x = self.embeddings(images)
         for stage in self.stages:
-            x = stage(x)
+            attention_masks = init_mask(x, self.locality)
+            x = stage(x, attention_masks)
 
         x = self.fc(x)
         # b t h -> t b h
