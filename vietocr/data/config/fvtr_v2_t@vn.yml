@@ -8,6 +8,7 @@ backbone: fvtr_v2_t
 cnn:
   output_size: 230
   norm_type: instancenorm
+  position_ids: [7, 1]
 
 seq_modeling: none
 transformer: {}
