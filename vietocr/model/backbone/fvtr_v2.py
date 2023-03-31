@@ -86,6 +86,21 @@ class XSin(nn.Module):
         return x * torch.sin(x)
 
 
+class LRSCPE(nn.Module):
+    def __init__(self, num_channels, position_ids):
+        super().__init__()
+        self.lpe = nn.Parameter(torch.zeros(
+            1, num_channels, position_ids[0], 1))
+        self.spe = PositionalEncoding(num_channels, position_dim=-1)
+
+    def forward(self, images):
+        lpe = self.lpe
+        spe = self.spe(images)
+        spe = spe.transpose(1, 0)
+        spe = spe.unsqueeze(0).unsqueeze(2)
+        return spe + lpe
+
+
 class FVTREmbedding(nn.Module):
     def __init__(
         self,
@@ -112,10 +127,12 @@ class FVTREmbedding(nn.Module):
         self.pe_type = pe_type
         if pe_type == 'learnable':
             self.pe = nn.Parameter(torch.zeros(1, 1, *position_ids))
+        elif pe_type == 'lrsc':
+            self.pe = LRSCPE(hidden_size, position_ids)
         elif pe_type == 'sin_2d':
             self.pe = PositionalEncoding2D(hidden_size)
-        elif pe_type == 'sin_1d':
-            self.pe = PositionalEncoding(hidden_size, position_dim=3)
+        elif pe_type == 'sin_row':
+            self.pe = PositionalEncoding(hidden_size, position_dim=2)
         elif pe_type == 'none':
             self.pe = None
         else:
@@ -133,8 +150,18 @@ class FVTREmbedding(nn.Module):
                 antialias=True,
             )
             pe = pe.repeat([embeddings.size(0), embeddings.size(1), 1, 1])
+        elif self.pe_type == 'sin_row':
+            pe = self.pe(embeddings)
+            # h c -> 1 h 1 c
+            pe = pe.unsqueeze(1).unsqueeze(0)
+            # 1 h 1 c -> b h w c
+            pe = pe.repeat([embeddings.size(0), 1, embeddings.size(3), 1])
+            # b h w c -> b c h w
+            pe = pe.permute([0, 3, 1, 2])
         elif self.pe is None:
             pe = 0
+        elif self.pe_type == 'lrsc':
+            pe = self.pe(embeddings)
         else:
             pe = self.pe(embeddings)
             # w c -> 1 1 w c
