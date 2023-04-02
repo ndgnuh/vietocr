@@ -353,7 +353,7 @@ class FVTR(nn.Sequential):
                  position_ids: int = (8, 64),
                  pe_type: bool = 'learnable',
                  norm_type: str = 'batchnorm',
-                 use_fn: bool = True
+                 use_fc: bool = True
                  ):
         super().__init__()
         self.locality = locality
