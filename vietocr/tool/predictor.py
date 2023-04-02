@@ -4,9 +4,9 @@ import torch
 
 
 class Predictor:
-    def __init__(self, config):
+    def __init__(self, config, reset_cache=False):
         config.setdefault('device', 'cpu')
-        self.model, self.vocab = build_model(config)
+        self.model, self.vocab = build_model(config, reset_cache=reset_cache)
         self.model.eval()
         self.image_height = config['image_height']
         self.image_min_width = config['image_min_width']

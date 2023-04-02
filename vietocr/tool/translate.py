@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import math
+import gdown
 from PIL import Image
 from torch.nn.functional import log_softmax, softmax
 
@@ -178,15 +179,19 @@ def translate_old(img, model, max_seq_length=128, sos_token=1, eos_token=2):
     return translated_sentence, char_probs
 
 
-def load_weights(path):
+def load_weights(path, reset_cache=False):
     if path.startswith('http'):
-        weights = torch.load(utils.download_weights(path), map_location="cpu")
+        if reset_cache:
+            download_fn = gdown.download
+        else:
+            download_fn = gdown.cached_download
+        weights = torch.load(download_fn(path), map_location="cpu")
     else:
         weights = torch.load(path, map_location="cpu")
     return weights
 
 
-def build_model(config, move_to_device=True):
+def build_model(config, move_to_device=True, reset_cache=False):
     if config['type'] == 's2s':
         vocab = VocabS2S(config['vocab'])
     elif config['type'] == 'ctc':
@@ -199,7 +204,7 @@ def build_model(config, move_to_device=True):
                     config['seq_modeling'],
                     stn=config.get('stn', None))
     if 'weights' in config:
-        weights = load_weights(config['weights'])
+        weights = load_weights(config['weights'], reset_cache=reset_cache)
         loosely_load_state_dict(model, weights)
 
     if move_to_device:
