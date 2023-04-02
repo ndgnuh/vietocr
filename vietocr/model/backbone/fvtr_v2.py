@@ -392,7 +392,7 @@ class FVTR(nn.Sequential):
         if use_fc:
             fc = nn.Linear(hidden_sizes[-1], self.output_size)
         else:
-            fc = nn.Idendity()
+            fc = nn.Identity()
 
         # add modules
         self.embeddings = embeddings
