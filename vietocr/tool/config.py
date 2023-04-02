@@ -34,7 +34,7 @@ def get_config(name_or_path: str):
     if name_or_path in url_config:
         config_path = url_config[name_or_path]
         config_path = path.join(config_dir, config_path)
-    if name_or_path.startswith("http"):
+    elif name_or_path.startswith("http"):
         config_path = gdown.download(name_or_path)
     else:
         config_path = name_or_path
