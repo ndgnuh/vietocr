@@ -353,7 +353,7 @@ class FVTR(nn.Sequential):
                  position_ids: int = (8, 64),
                  pe_type: bool = 'learnable',
                  norm_type: str = 'batchnorm',
-                 use_rnn: bool = False,
+                 use_fn: bool = True
                  ):
         super().__init__()
         self.locality = locality
@@ -389,7 +389,10 @@ class FVTR(nn.Sequential):
             stages.append(stage)
 
         # Classification
-        fc = nn.Linear(hidden_sizes[-1], self.output_size)
+        if use_fc:
+            fc = nn.Linear(hidden_sizes[-1], self.output_size)
+        else:
+            fc = nn.Idendity()
 
         # add modules
         self.embeddings = embeddings
