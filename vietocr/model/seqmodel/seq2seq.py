@@ -145,9 +145,9 @@ class Seq2Seq(nn.Module):
 
         return output, (hidden, encoder_outputs)
 
-    def forward(self, feat, trg=None, teacher_forcing=False):
+    def forward(self, feat, *a, tgt=None, teacher_forcing=False, **k):
         # feat: [time, batch, dim]
-        # trg: [batch, time]
+        # trg_input: [batch, time]
 
         encoder_outputs, hidden = self.encoder(feat)
 
@@ -161,10 +161,10 @@ class Seq2Seq(nn.Module):
         # When validating
         # it's useful to match
         # the length of the sequence
-        if trg is None:
+        if tgt is None:
             max_sequence_length = 128
         else:
-            max_sequence_length = trg.shape[1]
+            max_sequence_length = tgt.shape[1]
 
         if teacher_forcing:
             for t in range(max_sequence_length):
@@ -173,7 +173,7 @@ class Seq2Seq(nn.Module):
                     hidden,
                     encoder_outputs
                 )
-                input = trg[:, t]
+                input = tgt[:, t]
                 logits.append(prob)
         else:
             for i in range(max_sequence_length):

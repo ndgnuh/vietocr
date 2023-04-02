@@ -9,16 +9,26 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class FC(nn.Module):
-    def __init__(self, vocab_size, head_size):
+class NoneDecoder(nn.Module):
+    def __init__(self, vocab_size, *a, **k):
         super().__init__()
-        self.fc = nn.Linear(head_size, vocab_size)
+        self.vocab_size = vocab_size
+        self.err_msg = f"Output doesn't match vocab size of {self.vocab_size}"
 
-    def forward(self, x):
-        x = self.fc(x)
-        # t b h -> b t h
-        x = x.transpose(0, 1)
+    def forward(self, x, *a, **k):
+        x = x.transpose(1, 0)
+        assert x.shape[-1] == self.vocab_size, self.err_msg
         return x
+
+
+decoder_map = dict(
+    transformer=LanguageTransformer,
+    seq2seq=Seq2Seq,
+    convseq2seq=ConvSeq2Seq,
+    crnn=CRNN,
+    none=NoneDecoder,
+)
+decoder_map[None] = NoneDecoder
 
 
 class VietOCR(nn.Module):
@@ -35,30 +45,13 @@ class VietOCR(nn.Module):
         self.cnn = CNN(backbone, **cnn_args)
         self.seq_modeling = seq_modeling
 
-        if seq_modeling == 'transformer':
-            self.transformer = LanguageTransformer(
-                vocab_size, **transformer_args)
-        elif self.seq_modeling == 'c3rnn':
-            self.transformer = C3RNN(vocab_size, **transformer_args)
-        elif seq_modeling == 'seq2seq':
-            self.transformer = Seq2Seq(vocab_size, **transformer_args)
-        elif seq_modeling == 'convseq2seq':
-            self.transformer = ConvSeq2Seq(vocab_size, **transformer_args)
-        elif seq_modeling == 'rfng':
-            self.transformer = RefineAndGuess(vocab_size, **transformer_args)
-        elif seq_modeling == 'fcrnn':
-            self.transformer = FCRNN(vocab_size, **transformer_args)
-        elif seq_modeling == 'crnn':
-            self.transformer = CRNN(vocab_size, **transformer_args)
-        elif seq_modeling == 'none' or seq_modeling is None:
-            self.transformer = nn.Identity()
-        else:
-            raise('Not Support Seq Model')
+        DecoderLayer = decoder_map[seq_modeling]
+        self.transformer = DecoderLayer(vocab_size, **transformer_args)
 
     def forward(
         self,
         img,
-        tgt_input=None,
+        tgt=None,
         tgt_key_padding_mask=None,
         teacher_forcing=False
     ):
@@ -74,23 +67,9 @@ class VietOCR(nn.Module):
         # src: [time, batch, hidden]
         src = self.cnn(img)
 
-        if self.seq_modeling == 'transformer':
-            outputs = self.transformer(
-                src, tgt_input, tgt_key_padding_mask=tgt_key_padding_mask)
-        elif self.seq_modeling.endswith('c3rnn'):
-            outputs = self.transformer(src)
-        elif self.seq_modeling.endswith('crnn'):
-            outputs = self.transformer(src)
-        elif self.seq_modeling == 'seq2seq':
-            outputs = self.transformer(
-                src,
-                tgt_input,
-                teacher_forcing=teacher_forcing
-            )
-        elif self.seq_modeling == 'convseq2seq':
-            outputs = self.transformer(src, tgt_input)
-        elif self.seq_modeling == 'none' or self.seq_modeling is None:
-            outputs = self.transformer(src).transpose(0, 1)
-            assert outputs.shape[-1] == self.vocab_size, \
-                f"Output must be the same as vocab size ({self.vocab_size})"
+        outputs = self.transformer(
+            src,
+            tgt=tgt,
+            tgt_key_padding_mask=tgt_key_padding_mask
+        )
         return outputs
