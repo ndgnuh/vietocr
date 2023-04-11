@@ -50,9 +50,11 @@ def sanitize(s, vocab, replacement=None):
             # PREPLACE WITH UNIDECODE
             if c not in vocab:
                 replace = unidecode(c)
-                s = replace_at(s, i, replace)
-                prev_index = i
-                break
+                # if not in vocab, keep it, a blank will be placed there
+                if replace in vocab:
+                    s = replace_at(s, i, replace)
+                    prev_index = i
+                    break
 
         if prev == s:
             return s
@@ -188,6 +190,7 @@ class VocabCTC(Vocab):
         return ["blank"]
 
     def encode(self, chars, max_length=None):
+        chars = sanitize(chars, self.chars)
         # chars = unidecode_string(chars, self.chars)
         # Because the output is shifted right by 1
         ids = [self.blank_id]
