@@ -6,7 +6,11 @@ from typing import Tuple, List
 import torch
 import math
 
-from ..utils import LocalAttentionMaskProvider2d
+from ..utils import LocalAttentionMaskProvider2d, DConv2d
+
+
+def get_conv_layer(deformable: bool):
+    return DConv2d if deformable else nn.Conv2d
 
 
 class PositionalEncoding(nn.Module):
@@ -108,18 +112,20 @@ class FVTREmbedding(nn.Module):
         position_ids: int,
         image_channel: int = 3,
         patch_size: int = 4,
+        deformable: bool = False,
         norm_type='batchnorm',
         pe_type='learnable',
         dropout: float = 0.1,
     ):
         super().__init__()
+        Conv2d = get_conv_layer(deformable)
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size,
-                      kernel_size=3, stride=2),
+            Conv2d(image_channel, hidden_size,
+                   kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
-            nn.Conv2d(hidden_size, hidden_size,
-                      kernel_size=(3, 1), stride=(2, 1)),
+            Conv2d(hidden_size, hidden_size,
+                   kernel_size=(3, 1), stride=(2, 1)),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
         )
@@ -174,22 +180,6 @@ class FVTREmbedding(nn.Module):
         return embeddings
 
 
-class SpatialAttention2d(nn.Module):
-    def __init__(self, locality: int = 7):
-        super().__init__()
-        self.f = nn.Conv2d(2, 1, locality, padding=locality // 2)
-
-    def forward(self, x):
-        # b c h w -> b 1 h w
-        Fmax, _ = x.max(dim=1, keepdim=True)
-        # b c h w -> b 1 h w
-        Favg = x.mean(dim=1, keepdim=True)
-        # (b 1 h w) * 2 -> b 1 h w
-        attn = self.f(torch.cat([Favg, Fmax], dim=1))
-        attn = torch.sigmoid(attn)
-        return attn
-
-
 class CombiningBlock(nn.Module):
     def __init__(self, input_size, output_size, num_attention_heads, dropout=0.1):
         super().__init__()
@@ -215,12 +205,13 @@ class CombiningBlock(nn.Module):
 
 
 class MergingBlock(nn.Module):
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, output_size, deformable: bool = False):
         super().__init__()
-        self.conv = nn.Conv2d(input_size, output_size,
-                              kernel_size=(3, 1),
-                              padding=(1, 0),
-                              stride=(2, 1))
+        Conv2d = get_conv_layer(deformable)
+        self.conv = Conv2d(input_size, output_size,
+                           kernel_size=(3, 1),
+                           padding=(1, 0),
+                           stride=(2, 1))
         self.norm = nn.LayerNorm(output_size)
 
     def forward(self, x):
@@ -289,6 +280,7 @@ class FVTRStage(nn.Module):
         permutation: List,
         combine: bool,
         locality: Tuple[int, int],
+        deformable: bool,
     ):
         super().__init__()
 
@@ -312,7 +304,11 @@ class FVTRStage(nn.Module):
                 num_attention_head
             )
         else:
-            merging = MergingBlock(input_size, output_size)
+            merging = MergingBlock(
+                input_size,
+                output_size,
+                deformable=deformable,
+            )
 
         self.mixing_blocks = mixing_blocks
         self.merging = merging
@@ -353,7 +349,8 @@ class FVTR(nn.Sequential):
                  position_ids: int = (8, 64),
                  pe_type: bool = 'learnable',
                  norm_type: str = 'batchnorm',
-                 use_fc: bool = True
+                 use_fc: bool = True,
+                 deformable: bool = False,
                  ):
         super().__init__()
         self.locality = locality
@@ -367,6 +364,7 @@ class FVTR(nn.Sequential):
             image_channel=image_channel,
             position_ids=position_ids,
             pe_type=pe_type,
+            deformable=deformable,
         )
 
         # FVTR Stages
@@ -385,6 +383,7 @@ class FVTR(nn.Sequential):
                 num_attention_head=num_attention_head,
                 combine=combine,
                 locality=locality,
+                deformable=deformable,
             )
             stages.append(stage)
 

@@ -1,6 +1,29 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torchvision import ops
+
+
+class DConv2d(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, *a, **kw):
+        super().__init__()
+        self.conv = ops.DeformConv2d(
+            in_channels, out_channels, kernel_size, *a, **kw)
+        offset_channels = 2 * self.conv.groups * \
+            self.conv.kernel_size[1] * self.conv.kernel_size[0]
+        self.offset = nn.Conv2d(
+            in_channels,
+            offset_channels,
+            kernel_size,
+            padding=self.conv.padding,
+            stride=self.conv.stride,
+            groups=self.conv.groups,
+            bias=False
+        )
+
+    def forward(self, images):
+        offsets = self.offset(images)
+        return self.conv(images, offsets)
 
 
 def skew(orig_x, padding_value):
@@ -46,3 +69,18 @@ class LocalAttentionMaskProvider2d(nn.Module):
 
         self.cache[key] = mask
         return mask
+
+# class SpatialAttention2d(nn.Module):
+#     def __init__(self, locality: int = 7):
+#         super().__init__()
+#         self.f = nn.Conv2d(2, 1, locality, padding=locality // 2)
+
+#     def forward(self, x):
+#         # b c h w -> b 1 h w
+#         Fmax, _ = x.max(dim=1, keepdim=True)
+#         # b c h w -> b 1 h w
+#         Favg = x.mean(dim=1, keepdim=True)
+#         # (b 1 h w) * 2 -> b 1 h w
+#         attn = self.f(torch.cat([Favg, Fmax], dim=1))
+#         attn = torch.sigmoid(attn)
+#         return attn
