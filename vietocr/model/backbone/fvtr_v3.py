@@ -10,53 +10,78 @@ from torch.nn import functional as F
 from ..utils import LocalAttentionMaskProvider2d
 
 
-class MultiheadAttention(nn.Module):
-    def __init__(self, hidden_size: int, num_heads: int):
+class MultiheadSelfAttention(nn.Module):
+    def __init__(self, hidden_size, num_heads: int):
         super().__init__()
-        self.d_head = hidden_size // num_heads
-        self.n_heads = num_heads
-        self.d_model = hidden_size
-        self.in_weight = nn.Parameter(torch.rand(hidden_size * 3, hidden_size))
-        self.in_bias = nn.Parameter(torch.rand(hidden_size * 3))
-        self.out_proj = nn.Linear(hidden_size, hidden_size)
-        self.temp = math.sqrt(self.d_head)
+        head_dims = hidden_size // num_heads
+        self.temperature = head_dims**0.5
+        self.num_heads = num_heads
+        self.head_dims = head_dims
 
-    def attention(self, q, k, v, Ws, Bs, mask=None):
-        qw, kw, vw = Ws.unbind(1)
-        qb, kb, vb = Bs.unbind(1)
-        Q = F.linear(q, qw, qb)
-        K = F.linear(k, kw, kb)
-        V = F.linear(v, vw, vb)
-        atn = Q.matmul(K.transpose(1, 2))
-        atn = torch.softmax(atn / self.temp, dim=2)
-        if mask is not None:
-            if mask.dtype == torch.bool:
-                atn = torch.where(mask, torch.zeros_like(atn), atn)
-            elif mask.dtype == torch.float:
-                atn = atn + mask
-            elif mask.dtype == torch.long:
-                atn = atn * mask
-        out = atn.matmul(V)
-        return V, atn
+        self.heads = nn.ModuleList()
+        for _ in range(num_heads):
+            head = nn.ModuleDict()
+            head["Q"] = nn.Linear(head_dims, head_dims, bias=False)
+            head["K"] = nn.Linear(head_dims, head_dims, bias=False)
+            head["V"] = nn.Linear(head_dims, head_dims, bias=False)
+            self.heads.append(head)
 
-    def forward(self, q, k=None, v=None, mask=None):
-        k = q if k is None else k
-        v = k if v is None else v
+        self.output = nn.Linear(hidden_size, hidden_size, bias=False)
 
-        # Attention
-        qkv_weights = self.in_weight.reshape(
-            self.n_heads, self.d_head, 3, self.d_model
-        ).unbind(0)
-        qkv_biases = self.in_bias.reshape(self.n_heads, self.d_head, 3).unbind(0)
-        attentions = [
-            self.attention(q, k, v, w, b, mask) for w, b in zip(qkv_weights, qkv_biases)
-        ]
+    def forward_head(self, i, x, attn_mask=None):
+        head = self.heads[i]
+        Q = head["Q"](x)
+        K = head["K"](x)
+        V = head["V"](x)
+        energy = Q.matmul(K.transpose(2, 1))
+        energy = torch.softmax(energy / self.temperature, dim=-1)
+        if attn_mask is not None:
+            energy = (~attn_mask) * energy
+        out = energy.matmul(V)
+        return out
 
-        # Multihead
-        heads = torch.cat([a[0] for a in attentions], dim=2)
-        masks = sum(a[1] for a in attentions)
-        outputs = self.out_proj(heads)
-        return outputs, masks
+    def forward(self, x, attn_mask=None):
+        xs = torch.split(x, self.head_dims, dim=-1)
+        xs = [self.forward_head(i, x, attn_mask) for i, x in enumerate(xs)]
+        out = torch.cat(xs, dim=-1)
+        out = self.output(out)
+        return out
+
+
+class PositionEncoding(nn.Module):
+    def __init__(self, hidden_size: int, height: int):
+        super().__init__()
+        self.row_embs = nn.Parameter(torch.zeros(1, hidden_size, height, 1))
+
+        # shape: [D / 2]
+        invfreq = torch.arange(0, hidden_size, 2)
+        invfreq = invfreq * (-math.log(10000) / hidden_size)
+        self.register_buffer("iF", invfreq)
+
+    def forward(self, image):
+        # Notation:
+        # - W: width
+        # - H: height
+        # - D: hidden size (channels)
+
+        # [W]
+        device = image.device
+        dtype = image.dtype
+        pos = torch.arange(image.shape[-1], device=device, dtype=dtype)
+
+        # [W, 1] * [1, D / 2] -> [W, D / 2]
+        pos = pos[:, None] * self.iF
+        sin = torch.sin(pos)
+        cos = torch.cos(pos)
+
+        # [W, D] -> [1, D, 1, W]
+        col_embs = torch.cat([sin, cos], dim=1)
+        col_embs = col_embs.transpose(1, 0)[None, :, None, :]
+
+        # [1, D, H, 1] + [1, D, 1, W] -> [1, D, H, W]
+        row_embs = self.row_embs
+        pos_embs = row_embs + col_embs
+        return pos_embs
 
 
 class FVTREmbedding(nn.Module):
@@ -79,14 +104,14 @@ class FVTREmbedding(nn.Module):
         with torch.no_grad():
             img = torch.rand(1, 3, image_height, 30)
             num_hpatch = self.patch_embedding(img).shape[-2]
-        pe = torch.randn(hidden_size, num_hpatch)
-        nn.init.orthogonal_(pe)
-        self.position_encodings = nn.Parameter(pe[None, :, :, None])
+
+        self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
-        embeddings = self.dropout(self.position_encodings + embeddings)
+        embeddings = self.position_encodings(embeddings) + embeddings
+        embeddings = self.dropout(embeddings)
         return embeddings
 
 
@@ -141,8 +166,8 @@ class MixerBlock(nn.Module):
     ):
         super().__init__()
         self.local = local
-        self.mixer = MultiheadAttention(hidden_size, num_attention_head)
-        self.mixer_dropout = nn.Dropout(dropout)
+        self.mixer = MultiheadSelfAttention(hidden_size, num_attention_head)
+        self.mixer_dropout = nn.Dropout(attn_dropout)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
             nn.SELU(True),
@@ -160,7 +185,7 @@ class MixerBlock(nn.Module):
             return "GlobalMixer"
 
     def forward_sa(self, patches, mask):
-        x = self.mixer(patches, patches, patches, mask=mask)[0]
+        x = self.mixer(patches, attn_mask=mask)
         return self.mixer_dropout(x)
 
     def forward(self, patches, mask):
