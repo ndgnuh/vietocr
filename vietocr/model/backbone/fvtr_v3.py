@@ -96,13 +96,11 @@ class FVTREmbedding(nn.Module):
     ):
         super().__init__()
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size, kernel_size=3, stride=2),
-            nn.SELU(True),
-            nn.Conv2d(hidden_size, hidden_size, kernel_size=(3, 1), stride=(2, 1)),
+            nn.Conv2d(image_channel, hidden_size, kernel_size=5, stride=4, padding=1),
             nn.SELU(True),
         )
         with torch.no_grad():
-            img = torch.rand(1, 3, image_height, 30)
+            img = torch.rand(1, 3, image_height, 128)
             num_hpatch = self.patch_embedding(img).shape[-2]
 
         self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
