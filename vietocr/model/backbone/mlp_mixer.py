@@ -203,18 +203,19 @@ class MLPMixer(nn.Module):
 
         num_stages = len(num_layers)
         num_vertical_patches = patch_embeddings.num_vertical_patches
-        channels = hidden_sizes + [output_size]
         finals = [False] * (num_stages - 1) + [True]
         for i in range(num_stages):
             stage = MLPMixerStage(
-                in_channels=channels[i],
-                out_channels=channels[i + 1],
+                in_channels=hidden_sizes[i],
+                out_channels=hidden_sizes[i + 1],
                 num_vertical_patches=num_vertical_patches,
                 num_layers=num_layers[i],
                 final=finals[i],
             )
             num_vertical_patches = stage.num_vertical_patches
             self.stages.append(stage)
+
+        self.stages.append(nn.Linear(hidden_sizes[-1], output_size))
 
     def forward(self, x):
         for stage in self.stages:
