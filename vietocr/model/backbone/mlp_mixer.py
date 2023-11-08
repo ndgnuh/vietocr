@@ -50,18 +50,13 @@ class PatchEmbeddings(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
+        kwargs = dict(kernel_size=(4, 3), stride=(3, 2))
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(
-                image_channel,
-                hidden_size,
-                kernel_size=(3, 5),
-                stride=(2, 4),
-                padding=(1, 3),
-            ),
-            nn.SELU(True),
+            nn.Conv2d(image_channel, hidden_size, **kwargs),
+            nn.ReLU(True),
         )
         with torch.no_grad():
-            img = torch.rand(1, 3, image_height, 128)
+            img = torch.rand(1, 3, image_height, 10)
             num_hpatch = self.patch_embedding(img).shape[-2]
 
         self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
@@ -139,13 +134,8 @@ class MLPMixerBlock(nn.Module):
 class MiddleProjection(nn.Sequential):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.conv = nn.Conv2d(
-            in_channels,
-            out_channels,
-            kernel_size=(1, 3),
-            padding=(0, 1),
-            stride=(1, 2),
-        )
+        kwargs = dict(kernel_size=(3, 1), padding=(1, 0), stride=(2, 1))
+        self.conv = nn.Conv2d(in_channels, out_channels, **kwargs)
         self.to_vec = PermuteDim("bchw", "bhwc")
         self.norm = nn.LayerNorm(out_channels)
         self.to_img = PermuteDim("bhwc", "bchw")
@@ -187,6 +177,11 @@ class MLPMixerStage(nn.Module):
         else:
             self.projection = MiddleProjection(in_channels, out_channels)
 
+        # Calculate next stats
+        with torch.no_grad():
+            img = torch.rand(1, in_channels, num_vertical_patches, 10)
+            self.num_vertical_patches = self(img).shape[-2]
+
     def forward(self, x):
         for block in self.blocks:
             x = block(x)
@@ -218,11 +213,13 @@ class MLPMixer(nn.Module):
                 num_layers=num_layers[i],
                 final=finals[i],
             )
+            num_vertical_patches = stage.num_vertical_patches
             self.stages.append(stage)
 
     def forward(self, x):
         for stage in self.stages:
             x = stage(x)
+        x = x.transpose(1, 0)
         return x
 
 
