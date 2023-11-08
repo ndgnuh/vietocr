@@ -2,7 +2,8 @@ import torch
 from torch import nn
 
 import vietocr.model.backbone.vgg as vgg
-from vietocr.model.backbone import fvtr, fvtr_v2, fvtr_v3, resnet, shufflenet
+from vietocr.model.backbone import (fvtr, fvtr_v2, fvtr_v3, mlp_mixer, resnet,
+                                    shufflenet)
 from vietocr.model.backbone.efficientnet import PatchedEfficientNet
 from vietocr.model.backbone.mobilenet import (mobilenet_v3_large,
                                               mobilenet_v3_small)
@@ -28,6 +29,7 @@ backbone_by_names.update(shufflenet.models)
 backbone_by_names.update(fvtr.models)
 backbone_by_names.update(fvtr_v2.models)
 backbone_by_names.update(fvtr_v3.models)
+backbone_by_names.update(mlp_mixer.models)
 
 
 class CNN(nn.Module):
