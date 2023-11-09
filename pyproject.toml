@@ -37,4 +37,4 @@ email = "ndgnuh@protonmail.com"
 dev = ["imgaug", "lmdb", "matplotlib", "icecream"]
 
 [tool.setuptools]
-packages = ["vietocr"]
+packages = ["vietocr", "vietocr.vocabs", "vietocr.models"]

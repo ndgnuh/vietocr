@@ -1,2 +1,1 @@
-recursive-include vietocr/data/config *
-recursive-include vietocr/data/testimages *
+include vietocr/vocabs/*.txt
