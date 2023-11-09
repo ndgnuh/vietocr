@@ -53,7 +53,7 @@ class PatchEmbeddings(nn.Module):
         kwargs = dict(kernel_size=(4, 3), stride=(3, 2))
         self.patch_embedding = nn.Sequential(
             nn.Conv2d(image_channel, hidden_size, **kwargs),
-            nn.ReLU(True),
+            nn.SELU(True),
         )
         with torch.no_grad():
             img = torch.rand(1, 3, image_height, 10)
@@ -87,21 +87,21 @@ class MLPMixerBlock(nn.Module):
         kwargs = dict(kernel_size=(1, 3), padding=(0, 1), groups=hidden_size)
         self.h_mixer = nn.Sequential(
             nn.Conv2d(hidden_size, hidden_size * expansion, **kwargs),
-            nn.ReLU(True),
+            nn.SELU(True),
             nn.Conv2d(hidden_size * expansion, hidden_size, **kwargs),
         )
 
         self.v_mixer = nn.Sequential(
             PermuteDim("bchw", "bcwh"),
             nn.Linear(num_vertical_patches, num_vertical_patches * expansion),
-            nn.ReLU(True),
+            nn.SELU(True),
             nn.Linear(num_vertical_patches * expansion, num_vertical_patches),
             PermuteDim("bcwh", "bchw"),
         )
 
         self.c_mixer = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * expansion),
-            nn.ReLU(True),
+            nn.SELU(True),
             nn.Linear(hidden_size * expansion, hidden_size),
         )
         self.to_vec = PermuteDim("bchw", "bhwc")
@@ -147,7 +147,7 @@ class FinalProjection(nn.Module):
         self.output = nn.Sequential(
             PermuteDim("bcw", "bwc"),
             nn.Linear(in_channels, out_channels),
-            nn.ReLU(True),
+            nn.SELU(True),
             nn.Dropout(dropout),
         )
 
