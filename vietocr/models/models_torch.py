@@ -11,12 +11,6 @@ BACKBONES.update(backbone_mlp_mixer.MODULES)
 HEADS = {}
 HEADS.update(heads.MODULES)
 
-# Explicit checking for this function...
-# for M in BACKBONES.values():
-#     msg = f"Backbone {M.__name__} does not have `get_hidden_size` method"
-#     assert hasattr(M, "get_hidden_size"), msg
-#     del msg, M
-
 
 def _initialize(namespace: Dict, config: Union[Dict, str], **extra_kwargs):
     if isinstance(config, dict):
@@ -68,11 +62,11 @@ class OCRModel(nn.Module):
         # Output
         return x
 
-    # Conveniences
-    @staticmethod
-    def get_available_backbones():
-        return BACKBONES
 
-    @staticmethod
-    def get_available_heads():
-        return HEADS
+# Conveniences
+def get_available_backbones():
+    return BACKBONES
+
+
+def get_available_heads():
+    return HEADS
