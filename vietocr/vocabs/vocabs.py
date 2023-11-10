@@ -54,10 +54,10 @@ def sanitize(s: str, valid_chars: List[str], replacement=None) -> str:
                 break
 
             # PREPLACE WITH UNIDECODE
-            if c not in vocab:
+            if c not in valid_chars:
                 replace = unidecode(c)
-                # if not in vocab, keep it, a blank will be placed there
-                if replace in vocab:
+                # if not in valid_chars, keep it, a blank will be placed there
+                if replace in valid_chars:
                     s = replace_at(s, i, replace)
                     prev_index = i
                     break

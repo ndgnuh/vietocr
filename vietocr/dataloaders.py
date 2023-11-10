@@ -58,7 +58,7 @@ class OCRDataset(Dataset):
     def __getitem__(self, i: int) -> Sample:
         image_path, label = self.samples[i]
         image = Image.open(image_path)
-        sample = Sample(image=image, target=list(label))
+        sample = Sample(image=image, target=label)
         if self.transform is not None:
             return self.transform(sample)
         else:
@@ -130,8 +130,8 @@ def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
     target_lengths = []
     for image, target, target_length in samples:
         # Process image
-        image = tools.create_letterbox_pil(image, max_width, max_height)
-        image = tools.pil_to_numpy(image)
+        image = create_letterbox_pil(image, max_width, max_height)
+        image = pil_to_numpy(image)
         images.append(image)
 
         # Process target

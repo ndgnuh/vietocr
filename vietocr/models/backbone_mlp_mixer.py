@@ -4,6 +4,8 @@ from typing import List
 import torch
 from torch import nn
 
+from .reversible import Reversible
+
 
 class PositionEncoding(nn.Module):
     def __init__(self, hidden_size: int, height: int):
@@ -169,7 +171,8 @@ class MLPMixerStage(nn.Module):
         super().__init__()
         self.blocks = nn.Sequential()
         for i in range(num_layers):
-            block = MLPMixerBlock(in_channels, num_vertical_patches)
+            block = MLPMixerBlock(in_channels // 2, num_vertical_patches)
+            block = Reversible(block)
             self.blocks.append(block)
 
         if final:
