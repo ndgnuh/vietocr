@@ -44,7 +44,8 @@ def resize_image(
     width = max(width, min_width)
     width = min(width, max_width)
     width = int(width * rounding) // rounding
-    return image.resize(image_size, resampling)
+    new_size = (width, height)
+    return image.resize(new_size, resampling)
 
 
 def load_state_dict_whatever(model, state_dict: OrderedDict):
