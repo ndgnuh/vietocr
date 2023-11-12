@@ -1,8 +1,6 @@
 import random
-import threading
-import time
 from dataclasses import dataclass
-from queue import Empty, Queue
+from typing import Optional
 
 import torch
 from lightning import Fabric
@@ -23,60 +21,18 @@ class NormalizedSGD(optim.SGD):
         # Normalize gradient
         for pg in self.param_groups:
             for p in pg["params"]:
+                # No gradient
                 if p.grad is None:
                     continue
-                p.grad = F.normalize(p.grad)
+
+                try:
+                    p.grad = F.normalize(p.grad)
+                except IndexError:
+                    # Ignore dim errors
+                    continue
 
         # SGD step
         super().step(*args, **kwargs)
-
-
-class EchoDataLoader:
-    def __init__(self, loader):
-        self.loader = loader
-        self.queue = Queue()
-        self.cache = None
-        self.fetching = threading.Event()
-
-    def __len__(self):
-        return len(self.loader)
-
-    def __iter__(self):
-        num_batches = len(self.loader)
-        data_iter = iter(self.loader)
-        self.count = 0
-        fetching = self.fetching
-        fetching.clear()
-
-        def callback():
-            fetching.set()
-            item = next(data_iter)
-            self.cache = item
-            self.queue.put(item)
-            self.count += 1
-            fetching.clear()
-
-        while self.count < num_batches:
-            # Has cache
-            if fetching.is_set() and self.cache is not None:
-                yield self.cache
-                continue
-
-            # Fetch if not fetching
-            if not fetching.is_set():
-                threading.Thread(target=callback).start()
-
-            # Fetch first batch
-            if self.cache is None:
-                yield self.queue.get()
-                continue
-
-            # Try yielding data
-            try:
-                yield self.queue.get_nowait()
-            except Empty:
-                tqdm.write("Echo act 3, HOOOOO")
-                yield self.cache
 
 
 @dataclass
@@ -99,12 +55,25 @@ class DataIter:
 
 
 class Trainer:
-    def __init__(self, lang):
-        image_height = 32
-        train_data = "./data/index.txt"
-        max_steps = 50000
-        validate_every = 100
-        max_epochs = 1000
+    def __init__(
+        self,
+        # Modelling
+        lang: str,
+        vocab_type: str = "ctc",
+        image_height: int = 32,
+        image_min_width: int = 32,
+        image_max_width: int = 512,
+        # Data
+        train_data: Optional[str] = None,
+        val_data: Optional[str] = None,
+        test_data: Optional[str] = None,
+        # Training
+        max_steps: int = 100_000,
+        validate_every: int = 2_000,
+        lr: float = 1e-3,
+        batch_size: int = 1,
+        num_workers: int = 0,
+    ):
         backbone_config = {
             "name": "mlp_mixer_tiny",
             "image_height": image_height,
@@ -139,8 +108,10 @@ class Trainer:
             "num_workers": 12,
             "pin_memory": True,
         }
-        self.train_loader = get_dataloader(train_data, **kwargs)
-        self.val_loader = get_dataloader(train_data, **kwargs)
+        if train_data is not None:
+            self.train_loader = get_dataloader(train_data, **kwargs)
+        if val_data is not None:
+            self.val_loader = get_dataloader(val_data, **kwargs)
 
         # Scheduling
         self.max_epochs = 100
