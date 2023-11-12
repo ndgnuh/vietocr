@@ -1,17 +1,49 @@
+import hashlib
+import magic
+import pickle
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-from os import path
+from os import mkdir, path
 from typing import Callable, Hashable, List, Optional, Tuple
 
 import numpy as np
 import toolz
 import torch
+from dsrecords import IndexedRecordDataset, io
 from PIL import Image
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, Sampler
 from tqdm import tqdm
 
 from .tools import create_letterbox_pil, pil_to_numpy
+
+
+class disk_cache:
+    cache_dir = ".cache"
+    @classmethod
+    def save_cache(cls, key, data):
+        cls.ensure_cache_dir()
+        cache_path = cls.cache_path(key)
+        with open(cache_path, 'wb+') as f:
+            pickle.dump(data, f)
+
+    @classmethod
+    def ensure_cache_dir(cls):
+        if not path.exists(cls.cache_dir):
+            mkdir(cls.cache_dir, exist_ok=True)
+
+    @classmethod
+    def cache_path(cls, key: str):
+        return path.join(cls.cache_dir, f"{key}")
+
+    @classmethod
+    def load_cache(cls, key):
+        cache_path = cls.cache_path(key)
+        if not path.exists(cache_path):
+            return None
+        with open(cache_path, 'rb') as f:
+            data = pickle.load(f)
+        return data
 
 
 @dataclass
@@ -52,6 +84,11 @@ class OCRDataset(Dataset):
         ]
         self.transform = transform
 
+    def hash(self) -> str:
+        with open(self.annotation_path, "rb") as f:
+            hash_ = hashlib.file_digest(f, "sha256").hexdigest()
+        return hash_
+
     def __len__(self):
         return len(self.samples)
 
@@ -78,13 +115,25 @@ class BucketRandomSampler(Sampler):
         # Init
         super().__init__(data_source=data_source)
         self.batch_size = batch_size
+        self.cache_key = f"sampler_bucket_{data_source.hash()}"
         self.data_source = data_source
-        self.buckets = defaultdict(list)
+        buckets = disk_cache.load_cache(self.cache_key)
+        if buckets is None:
+            self.buckets = self.build_bucket_indices()
+            disk_cache.save_cache(self.cache_key, self.buckets)
+        else:
+            self.buckets = buckets
 
-        iterator = enumerate(tqdm(data_source, "Building buckets", leave=False))
-        for i, sample in iterator:
+    def build_bucket_indices(self):
+        # IO bound, threads won't help
+        data_source = self.data_source
+        buckets = defaultdict(list)
+        n = len(data_source)
+        for i in tqdm(range(n), "Building bucket", leave=False):
+            sample = data_source[i]
             key = data_source.get_bucket_key(sample)
-            self.buckets[key].append(i)
+            buckets[key].append(i)
+        return buckets
 
     def __len__(self):
         return len(self.data_source)
@@ -147,6 +196,40 @@ def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
     return images, targets, target_lengths
 
 
+class OCRRecordDataset(OCRDataset):
+    def __init__(self, data_path, transform):
+        loaders = [io.load_pil, io.load_str]
+        self.data_path = data_path
+        self.data = IndexedRecordDataset(data_path, deserializers=loaders)
+        self.transform = transform
+
+    def hash(self):
+        with open(self.data.index.path, "rb") as f:
+            hash_ = hashlib.file_digest(f, "sha256").hexdigest()
+        return hash_
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        return (self[i] for i in range(len(self)))
+
+    def __getitem__(self, idx):
+        image, label = self.data[idx]
+        sample = Sample(image, label)
+        if self.transform:
+            return self.transform(sample)
+        else:
+            return sample
+
+
+def get_dataset(dataset_path: str, transform: Callable):
+    if dataset_path.endswith(".rec"):
+        return OCRRecordDataset(dataset_path, transform=transform)
+    else:
+        return OCRDataset(dataset_path, transform)
+
+
 def get_dataloader(
     annotation_path: str,
     transform: Optional[Callable] = None,
@@ -154,9 +237,9 @@ def get_dataloader(
 ):
     # Create dataset or datasets
     if isinstance(annotation_path, str):
-        dataset = OCRDataset(annotation_path, transform)
+        dataset = get_dataset(annotation_path, transform)
     else:
-        datasets = [OCRDataset(ann_file, transform) for ann_file in annotation_path]
+        datasets = [get_dataset(ann_file, transform) for ann_file in annotation_path]
         dataset = ConcatDataset(datasets)
         dataset.get_bucket_key = datasets[0].get_bucket_key
 
