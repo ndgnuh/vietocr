@@ -7,6 +7,7 @@ from queue import Empty, Queue
 import torch
 from lightning import Fabric
 from torch import optim
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -15,6 +16,19 @@ from .models import OCRModel
 from .models.losses import CrossEntropyLoss, CTCLoss
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
+
+
+class NormalizedSGD(optim.SGD):
+    def step(self, *args, **kwargs):
+        # Normalize gradient
+        for pg in self.param_groups:
+            for p in pg["params"]:
+                if p.grad is None:
+                    continue
+                p.grad = F.normalize(p.grad)
+
+        # SGD step
+        super().step(*args, **kwargs)
 
 
 class EchoDataLoader:
@@ -104,7 +118,7 @@ class Trainer:
         self.vocab: Vocab = get_vocab(lang=lang)
         self.model = OCRModel(len(self.vocab), backbone_config, head_config)
         self.fabric = Fabric()
-        self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
+        self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
         self.criterion = CTCLoss(self.vocab)
 
         # ========
