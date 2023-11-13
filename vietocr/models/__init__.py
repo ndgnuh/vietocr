@@ -76,7 +76,7 @@ class OCRModel(nn.Module):
     def post_process(self, x: Tensor):
         probs = torch.softmax(x, dim=-1)
         scores, indices = torch.max(probs, dim=-1)
-        return indices, scores
+        return scores, indices
 
     def export_onnx(self, example_inputs: Tensor, output_file: str, **options):
         self.exporting = True
