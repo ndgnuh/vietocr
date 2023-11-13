@@ -4,6 +4,7 @@ from typing import Optional
 
 import torch
 from lightning import Fabric
+from tensorboardX import SummaryWriter
 from torch import optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
@@ -33,6 +34,16 @@ class NormalizedSGD(optim.SGD):
 
         # SGD step
         super().step(*args, **kwargs)
+
+
+def normalize_grad_(parameters):
+    for p in parameters:
+        if p.grad is None:
+            continue
+
+        grad = p.grad
+        dim = min(1, grad.dim)
+        p.grad = F.normalize(p.grad, dim=dim)
 
 
 @dataclass
@@ -79,7 +90,7 @@ class Trainer:
             "image_height": image_height,
         }
         head_config = "linear"
-        optim_config = {"lr": 1e-3, "momentum": 0.09, "weight_decay": 1e-5}
+        optim_config = {"lr": lr, "momentum": 0.09, "weight_decay": 1e-5}
 
         # =============
         # | Modelling |
@@ -87,7 +98,8 @@ class Trainer:
         self.vocab: Vocab = get_vocab(lang=lang)
         self.model = OCRModel(len(self.vocab), backbone_config, head_config)
         self.fabric = Fabric()
-        self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
+        # self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
+        self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
         self.criterion = CTCLoss(self.vocab)
 
         # ========
@@ -96,16 +108,16 @@ class Trainer:
         def transform(sample: Sample) -> Sample:
             image = sample.image
             image = image.convert("RGB")
-            image = resize_image(image, image_height, 32, 500)
+            image = resize_image(image, image_height, image_min_width, image_max_width)
             target = self.vocab.encode(sample.target)
             new_sample = Sample(image, target)
             return new_sample
 
-        self.batch_size = 32
+        self.batch_size = batch_size
         kwargs = {
             "transform": transform,
             "batch_size": self.batch_size,
-            "num_workers": 12,
+            "num_workers": num_workers,
             "pin_memory": True,
         }
         if train_data is not None:
@@ -113,13 +125,20 @@ class Trainer:
         if val_data is not None:
             self.val_loader = get_dataloader(val_data, **kwargs)
 
-        # Scheduling
+        # ==============
+        # | Scheduling |
+        # ==============
         self.max_epochs = 100
         self.max_steps = max_steps or self.max_epochs * self.batch_size
         self.validate_every = validate_every
 
+        # ===========
+        # | Logging |
+        # ===========
+        self.logger = SummaryWriter(flush_secs=1)
+
     @torch.no_grad()
-    def run_validation(self):
+    def run_validation(self, step=0):
         # Setup
         model = self.fabric.setup(self.model)
         val_loader = self.fabric.setup_dataloaders(self.val_loader)
@@ -153,7 +172,8 @@ class Trainer:
             tqdm.write("PR: " + pr)
             tqdm.write("GT: " + gt)
             tqdm.write("=" * (n + 4))
-        tqdm.write("Mean validation loss: %.4e" % mean_loss)
+        self.logger.add_scalar("val/loss", mean_loss, step)
+        tqdm.write("Mean validation loss: %.6e" % mean_loss)
         return mean_loss
 
     def fit(self):
@@ -167,14 +187,16 @@ class Trainer:
             optimizer.zero_grad()
             outputs = model(images)
             loss = self.criterion(outputs, targets, target_lengths)
+            normalize_grad_(model.parameters())
             loss.backward()
             optimizer.step()
 
             # Validation
             if step % self.validate_every == 0:
                 model.eval()
-                self.run_validation()
+                self.run_validation(step)
                 model.train()
 
             # Logging
+            self.logger.add_scalar("train/loss", loss, step)
             pbar.set_postfix({"loss": loss.item()})

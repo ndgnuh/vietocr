@@ -1,10 +1,9 @@
 import hashlib
-import magic
 import pickle
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-from os import mkdir, path
+from os import makedirs, path
 from typing import Callable, Hashable, List, Optional, Tuple
 
 import numpy as np
@@ -30,7 +29,7 @@ class disk_cache:
     @classmethod
     def ensure_cache_dir(cls):
         if not path.exists(cls.cache_dir):
-            mkdir(cls.cache_dir, exist_ok=True)
+           makedirs(cls.cache_dir, exist_ok=True)
 
     @classmethod
     def cache_path(cls, key: str):
@@ -83,6 +82,7 @@ class OCRDataset(Dataset):
             [path.join(self.root_path, image), label] for image, label in annotations
         ]
         self.transform = transform
+        self.annotation_path = annotation_path
 
     def hash(self) -> str:
         with open(self.annotation_path, "rb") as f:
