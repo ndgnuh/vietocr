@@ -1,6 +1,6 @@
 import random
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, Optional, Union
 
 import torch
 from lightning import Fabric
@@ -17,23 +17,17 @@ from .tools import resize_image
 from .vocabs import Vocab, get_vocab
 
 
-class NormalizedSGD(optim.SGD):
-    def step(self, *args, **kwargs):
-        # Normalize gradient
-        for pg in self.param_groups:
-            for p in pg["params"]:
-                # No gradient
-                if p.grad is None:
-                    continue
-
-                try:
-                    p.grad = F.normalize(p.grad)
-                except IndexError:
-                    # Ignore dim errors
-                    continue
-
-        # SGD step
-        super().step(*args, **kwargs)
+@dataclass
+class ModelConfig:
+    language: str
+    vocab_type: str
+    backbone: Union[Dict, str]
+    head: Union[Dict, str]
+    image_height: int = None
+    image_min_width: int = None
+    image_max_width: int = None
+    weight_path: Optional[str] = None
+    onnx_path: Optional[str] = None
 
 
 def normalize_grad_(parameters):
@@ -147,7 +141,7 @@ class Trainer:
         # Validate
         sample_predictions = []
         losses = []
-        pbar = tqdm(val_loader, "[V]", dynamic_ncols=True, leave=False)
+        pbar = tqdm(val_loader, "Validate", dynamic_ncols=True, leave=False)
         for step, batch in enumerate(pbar):
             (images, targets, target_lengths) = batch
             outputs = model(images)
@@ -176,10 +170,16 @@ class Trainer:
         tqdm.write("Mean validation loss: %.6e" % mean_loss)
         return mean_loss
 
+    def save_model(self):
+        torch.save(self.model.state_dict(), "model.pt")
+        # tqdm.write("model saved to model.pt")
+
     def fit(self):
         model, optimizer = self.fabric.setup(self.model, self.optimizer)
         train_loader = self.fabric.setup_dataloaders(self.train_loader)
         train_loader = DataIter(train_loader, self.max_steps)
+        tqdm.write("Num training batches: %d" % len(self.train_loader))
+        tqdm.write("Num validation batches: %d" % len(self.val_loader))
         # train_loader = EchoDataLoader(train_loader)
 
         pbar = tqdm(train_loader, "Train", dynamic_ncols=True)
@@ -191,6 +191,22 @@ class Trainer:
             loss.backward()
             optimizer.step()
 
+            if step % 1000 == 0:
+                self.save_model()
+
+
+            # Show sample predictions
+            if step % 2000 == 0:
+                predicts, _ = model.post_process(outputs)
+                predicts = predicts.detach().cpu()
+                targets = targets.detach().cpu()
+                tqdm.write("=" * 10 + f" STEP {step} " + "=" * 10)
+                for pr, gt in zip(predicts, targets):
+                    pr = self.vocab.decode(pr.tolist())
+                    gt = self.vocab.decode(gt.tolist())
+                    tqdm.write(f"PR: {pr}")
+                    tqdm.write(f"GT: {gt}")
+                    tqdm.write("=" * 10)
             # Validation
             if step % self.validate_every == 0:
                 model.eval()
