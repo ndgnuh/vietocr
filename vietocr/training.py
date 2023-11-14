@@ -5,16 +5,27 @@ from typing import Dict, Optional, Union
 import torch
 from lightning import Fabric
 from tensorboardX import SummaryWriter
-from torch import optim
+from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .dataloaders import Sample, get_dataloader
+from .metrics import Avg, acc_full_sequence, acc_per_char
 from .models import OCRModel
 from .models.losses import CrossEntropyLoss, CTCLoss
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
+
+
+def get_lr_scheduler(optimizer, warmup: int):
+    def lr_lambda(step):
+        if step < warmup:
+            return step / warmup
+        else:
+            return 1
+
+    return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 @dataclass
@@ -30,14 +41,20 @@ class ModelConfig:
     onnx_path: Optional[str] = None
 
 
+@torch.no_grad()
 def normalize_grad_(parameters):
-    for p in parameters:
-        if p.grad is None:
-            continue
+    nn.utils.clip_grad_norm_(parameters, 1)
+    # from copy import copy
+    # num_params = len(copy(parameters))
+    # scale = 1.
+    # for p in parameters:
+    #     if p.grad is None:
+    #         continue
 
-        grad = p.grad
-        dim = min(1, grad.dim)
-        p.grad = F.normalize(p.grad, dim=dim)
+    #     grad = p.grad
+    #     dim = min(1, grad.dim)
+    #     p.grad.data = F.normalize(p.grad.data, dim=dim) * scale
+    #     scale = scale * 0.999
 
 
 @dataclass
@@ -80,20 +97,22 @@ class Trainer:
         num_workers: int = 0,
     ):
         backbone_config = {
-            "name": "mlp_mixer_tiny",
+            "name": "fvtr_t",
             "image_height": image_height,
         }
         head_config = "linear"
-        optim_config = {"lr": lr, "momentum": 0.09, "weight_decay": 1e-5}
+        optim_config = {"lr": lr, "momentum": 0.009, "weight_decay": 1e-5}
 
         # =============
         # | Modelling |
         # =============
         self.vocab: Vocab = get_vocab(lang=lang)
         self.model = OCRModel(len(self.vocab), backbone_config, head_config)
+        self.model.load_state_dict(torch.load("./model.pt", map_location="cpu"))
         self.fabric = Fabric()
         # self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
         self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
+        self.lr_scheduler = get_lr_scheduler(self.optimizer, warmup=500)
         self.criterion = CTCLoss(self.vocab)
 
         # ========
@@ -133,32 +152,56 @@ class Trainer:
 
     @torch.no_grad()
     def run_validation(self, step=0):
-        # Setup
+        # +-------+
+        # | Setup |
+        # +-------+
         model = self.fabric.setup(self.model)
         val_loader = self.fabric.setup_dataloaders(self.val_loader)
         model = model.eval()
 
-        # Validate
+        # +-----------------+
+        # | Average metrics |
+        # +-----------------+
+        acc_fs = Avg()
+        acc_pc = Avg()
+        loss_avg = Avg()
+
+        # +-----------------+
+        # | Validation loop |
+        # +-----------------+
         sample_predictions = []
-        losses = []
         pbar = tqdm(val_loader, "Validate", dynamic_ncols=True, leave=False)
         for step, batch in enumerate(pbar):
+            # +---------+
+            # | Forward |
+            # +---------+
             (images, targets, target_lengths) = batch
             outputs = model(images)
             loss = self.criterion(outputs, targets, target_lengths)
             loss = loss.item()
 
+            # +-----------------------------+
+            # | Decode and compute accuracy |
+            # +-----------------------------+
             predicts = outputs.argmax(dim=-1)
             for pr, gt in zip(predicts, targets):
                 pr = self.vocab.decode(pr.tolist())
                 gt = self.vocab.decode(gt.tolist())
                 sample_predictions.append([pr, gt])
 
-            pbar.set_postfix({"loss": loss})
-            losses.append(loss)
+                acc_fs.append(acc_full_sequence(pr, gt))
+                acc_pc.append(acc_per_char(pr, gt))
 
+            # +---------+
+            # | Logging |
+            # +---------+
+            pbar.set_postfix({"loss": loss})
+            loss_avg.append(loss)
+
+        # +-----------------+
+        # | Show prediction |
+        # +-----------------+
         shown_predictions = random.choices(sample_predictions, k=5)
-        mean_loss = sum(losses) / len(losses)
         n = 0
         for pr, gt in shown_predictions:
             n = max(n, len(pr), len(gt))
@@ -166,9 +209,35 @@ class Trainer:
             tqdm.write("PR: " + pr)
             tqdm.write("GT: " + gt)
             tqdm.write("=" * (n + 4))
-        self.logger.add_scalar("val/loss", mean_loss, step)
-        tqdm.write("Mean validation loss: %.6e" % mean_loss)
-        return mean_loss
+
+        # +--------------------+
+        # | Log to tensorboard |
+        # +--------------------+
+        self.logger.add_scalar(
+            "val/loss",
+            loss_avg.get(),
+            step,
+            display_name="Validation loss",
+        )
+        self.logger.add_scalar(
+            "val/acc-fs",
+            acc_fs.get(),
+            step,
+            display_name="Accuracy full sequence",
+        )
+        self.logger.add_scalar(
+            "val/acc-pc",
+            acc_pc.get(),
+            step,
+            display_name="Accuracy per-characters",
+        )
+
+        # +---------------+
+        # | Log to stdout |
+        # +---------------+
+        fmt_data = (loss_avg.get(), acc_fs.get(), acc_pc.get())
+        fmt = "[Validation] loss: %.5e - Full sequence: %.4f - Per-char: %.4f"
+        tqdm.write(fmt % fmt_data)
 
     def save_model(self):
         torch.save(self.model.state_dict(), "model.pt")
@@ -176,28 +245,32 @@ class Trainer:
 
     def fit(self):
         model, optimizer = self.fabric.setup(self.model, self.optimizer)
+        lr_scheduler = self.lr_scheduler
         train_loader = self.fabric.setup_dataloaders(self.train_loader)
         train_loader = DataIter(train_loader, self.max_steps)
         tqdm.write("Num training batches: %d" % len(self.train_loader))
         tqdm.write("Num validation batches: %d" % len(self.val_loader))
         # train_loader = EchoDataLoader(train_loader)
 
+        logger: SummaryWriter = self.logger
+        logger.add_text("Model", repr(model), 0)
+
         pbar = tqdm(train_loader, "Train", dynamic_ncols=True)
         for step, (images, targets, target_lengths) in pbar:
             optimizer.zero_grad()
             outputs = model(images)
             loss = self.criterion(outputs, targets, target_lengths)
-            normalize_grad_(model.parameters())
+            # normalize_grad_(model.parameters())
             loss.backward()
             optimizer.step()
+            lr_scheduler.step()
 
             if step % 1000 == 0:
                 self.save_model()
 
-
             # Show sample predictions
             if step % 2000 == 0:
-                predicts, _ = model.post_process(outputs)
+                scores, predicts = model.post_process(outputs)
                 predicts = predicts.detach().cpu()
                 targets = targets.detach().cpu()
                 tqdm.write("=" * 10 + f" STEP {step} " + "=" * 10)
@@ -214,5 +287,9 @@ class Trainer:
                 model.train()
 
             # Logging
+            width = images.shape[-1]
+            lr = lr_scheduler.get_last_lr()[0]
             self.logger.add_scalar("train/loss", loss, step)
-            pbar.set_postfix({"loss": loss.item()})
+            self.logger.add_scalar("train/width", width, step)
+            self.logger.add_scalar("train/lr", lr, step)
+            pbar.set_postfix({"loss": loss.item(), "lr": f"{lr:.4e}"})
