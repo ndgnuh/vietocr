@@ -4,10 +4,11 @@ from typing import Dict, Union
 import torch
 from torch import Tensor, nn
 
-from . import backbone_mlp_mixer, heads, losses
+from . import backbone_mlp_mixer, heads, losses, backbone_fvtr
 
 BACKBONES = {}
 BACKBONES.update(backbone_mlp_mixer.MODULES)
+BACKBONES.update(backbone_fvtr.MODULES)
 
 HEADS = {}
 HEADS.update(heads.MODULES)
