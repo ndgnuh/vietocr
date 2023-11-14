@@ -43,7 +43,7 @@ def resize_image(
     width = get_width_for_height(image_size, height)
     width = max(width, min_width)
     width = min(width, max_width)
-    width = int(width * rounding) // rounding
+    width = int(width / rounding) * rounding
     new_size = (width, height)
     return image.resize(new_size, resampling)
 

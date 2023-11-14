@@ -74,8 +74,8 @@ class Trainer:
         lang: str,
         vocab_type: str = "ctc",
         image_height: int = 32,
-        image_min_width: int = 32,
-        image_max_width: int = 512,
+        image_min_width: int = 30,
+        image_max_width: int = 520,
         # Data
         train_data: Optional[str] = None,
         val_data: Optional[str] = None,
