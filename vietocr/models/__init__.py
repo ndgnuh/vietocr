@@ -4,12 +4,27 @@ from typing import Dict, Union
 import torch
 from torch import Tensor, nn
 
-from . import backbone_mlp_mixer, heads, losses, backbone_fvtr
+from . import backbone_fvtr, backbone_mlp_mixer, heads
+from .losses import CrossEntropyLoss, CTCLoss
+from .optim import CosineWWRD
 
+# +-------------------------------------------+
+# | Assert so that the LSP does not complaint |
+# +-------------------------------------------+
+assert CosineWWRD
+assert CrossEntropyLoss
+assert CTCLoss
+
+# +-------------------------------------+
+# | Dictionary of all backbones by name |
+# +-------------------------------------+
 BACKBONES = {}
 BACKBONES.update(backbone_mlp_mixer.MODULES)
 BACKBONES.update(backbone_fvtr.MODULES)
 
+# +--------------------------------------------+
+# | Dictionary of all prediction heads by name |
+# +--------------------------------------------+
 HEADS = {}
 HEADS.update(heads.MODULES)
 
@@ -90,7 +105,11 @@ class OCRModel(nn.Module):
         self.exporting = False
 
 
-# Conveniences
+# +--------------+
+# | Conveniences |
+# +--------------+
+
+
 def get_available_backbones():
     return BACKBONES
 

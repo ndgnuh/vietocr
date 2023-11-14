@@ -1,3 +1,13 @@
+"""
+Module for training models.
+
+In case you are wondering, no I did not write those comment boxes.
+Vim did it.
+
+# +---------------+
+# | Nice isn't it |
+# +---------------+
+"""
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional, Union
@@ -6,15 +16,12 @@ import torch
 from lightning import Fabric
 from tensorboardX import SummaryWriter
 from torch import nn, optim
-from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .dataloaders import Sample, get_dataloader
 from .metrics import Avg, acc_full_sequence, acc_per_char
-from .models import OCRModel
-from .models.losses import CrossEntropyLoss, CTCLoss
-from .models.optim import CosineWWRD
+from .models import CosineWWRD, CTCLoss, OCRModel
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
 
@@ -54,7 +61,7 @@ class DataIter:
     total_steps: int
 
     def __len__(self):
-        # Needed for tqdm to produce the progress bar
+        # Len is needed for tqdm to produce the progress bar
         return self.total_steps
 
     def __iter__(self):
@@ -87,6 +94,9 @@ class Trainer:
         batch_size: int = 1,
         num_workers: int = 0,
     ):
+        # +--------------------+
+        # | TODO: Model config |
+        # +--------------------+
         backbone_config = {
             "name": "fvtr_t",
             "image_height": image_height,
@@ -94,14 +104,24 @@ class Trainer:
         head_config = "linear"
         optim_config = {"lr": lr, "momentum": 0.009, "weight_decay": 1e-5}
 
-        # =============
+        # +-----------+
         # | Modelling |
-        # =============
+        # +-----------+
         self.vocab: Vocab = get_vocab(lang=lang)
         self.model = OCRModel(len(self.vocab), backbone_config, head_config)
-        self.model.load_state_dict(torch.load("./model.pt", map_location="cpu"))
         self.fabric = Fabric()
-        # self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
+
+        # +---------------------+
+        # | TODO: model loading |
+        # +---------------------+
+        try:
+            self.model.load_state_dict(torch.load("./model.pt", map_location="cpu"))
+        except Exception:
+            pass
+
+        # +--------------+
+        # | Optimization |
+        # +--------------+
         self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
         self.lr_scheduler = CosineWWRD(
             self.optimizer,
@@ -112,9 +132,9 @@ class Trainer:
         )
         self.criterion = CTCLoss(self.vocab)
 
-        # ========
-        # | Data |
-        # ========
+        # +-------------------------------+
+        # | Pre-process data for training |
+        # +-------------------------------+
         def transform(sample: Sample) -> Sample:
             image = sample.image
             image = image.convert("RGB")
@@ -123,6 +143,9 @@ class Trainer:
             new_sample = Sample(image, target)
             return new_sample
 
+        # +------------------------------+
+        # | Train/validation dataloaders |
+        # +------------------------------+
         self.batch_size = batch_size
         kwargs = {
             "transform": transform,
@@ -149,6 +172,14 @@ class Trainer:
 
     @torch.no_grad()
     def run_validation(self, step=0):
+        """Run validation loop. Compute validation loss,
+        full sequence and per-character accuracy.
+
+        Args:
+            step (int):
+                The current global step, this is used for
+                logging to tensorboard. Default: `0`.
+        """
         # +-------+
         # | Setup |
         # +-------+
@@ -168,7 +199,7 @@ class Trainer:
         # +-----------------+
         sample_predictions = []
         pbar = tqdm(val_loader, "Validate", dynamic_ncols=True, leave=False)
-        for step, batch in enumerate(pbar):
+        for _, batch in enumerate(pbar):
             # +---------+
             # | Forward |
             # +---------+
@@ -241,31 +272,47 @@ class Trainer:
         # tqdm.write("model saved to model.pt")
 
     def fit(self):
+        """Run training"""
+        # +------------------------------------------+
+        # | Setup model, optimizers, and data loader |
+        # +------------------------------------------+
         model, optimizer = self.fabric.setup(self.model, self.optimizer)
         lr_scheduler = self.lr_scheduler
         train_loader = self.fabric.setup_dataloaders(self.train_loader)
         train_loader = DataIter(train_loader, self.max_steps)
+
+        # +-------------------------------+
+        # | Setup logging/initial logging |
+        # +-------------------------------+
         tqdm.write("Num training batches: %d" % len(self.train_loader))
         tqdm.write("Num validation batches: %d" % len(self.val_loader))
-        # train_loader = EchoDataLoader(train_loader)
-
         logger: SummaryWriter = self.logger
         logger.add_text("Model", repr(model), 0)
 
+        # +---------------+
+        # | Training loop |
+        # +---------------+
         pbar = tqdm(train_loader, "Train", dynamic_ncols=True)
         for step, (images, targets, target_lengths) in pbar:
+            # +-------------------------+
+            # | Forward/backward/update |
+            # +-------------------------+
             optimizer.zero_grad()
             outputs = model(images)
             loss = self.criterion(outputs, targets, target_lengths)
-            # normalize_grad_(model.parameters())
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
 
+            # +------------------+
+            # | Model checkpoint |
+            # +------------------+
             if step % 1000 == 0:
                 self.save_model()
 
-            # Show sample predictions
+            # +---------------------------------------+
+            # | Show sample predictions every N steps |
+            # +---------------------------------------+
             if step % 2000 == 0:
                 scores, predicts = model.post_process(outputs)
                 predicts = predicts.detach().cpu()
@@ -277,13 +324,18 @@ class Trainer:
                     tqdm.write(f"PR: {pr}")
                     tqdm.write(f"GT: {gt}")
                     tqdm.write("=" * 10)
-            # Validation
+
+            # +---------------------+
+            # | Run validation loop |
+            # +---------------------+
             if step % self.validate_every == 0:
                 model.eval()
                 self.run_validation(step)
                 model.train()
 
-            # Logging
+            # +---------+
+            # | Logging |
+            # +---------+
             width = images.shape[-1]
             lr = lr_scheduler.get_last_lr()[0]
             self.logger.add_scalar("train/loss", loss, step)
