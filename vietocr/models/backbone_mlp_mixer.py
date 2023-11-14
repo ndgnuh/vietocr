@@ -171,8 +171,7 @@ class MLPMixerStage(nn.Module):
         super().__init__()
         self.blocks = nn.Sequential()
         for i in range(num_layers):
-            block = MLPMixerBlock(in_channels // 2, num_vertical_patches)
-            block = Reversible(block)
+            block = MLPMixerBlock(in_channels, num_vertical_patches)
             self.blocks.append(block)
 
         if final:
