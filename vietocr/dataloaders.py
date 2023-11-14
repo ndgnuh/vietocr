@@ -19,17 +19,18 @@ from .tools import create_letterbox_pil, pil_to_numpy
 
 class disk_cache:
     cache_dir = ".cache"
+
     @classmethod
     def save_cache(cls, key, data):
         cls.ensure_cache_dir()
         cache_path = cls.cache_path(key)
-        with open(cache_path, 'wb+') as f:
+        with open(cache_path, "wb+") as f:
             pickle.dump(data, f)
 
     @classmethod
     def ensure_cache_dir(cls):
         if not path.exists(cls.cache_dir):
-           makedirs(cls.cache_dir, exist_ok=True)
+            makedirs(cls.cache_dir, exist_ok=True)
 
     @classmethod
     def cache_path(cls, key: str):
@@ -40,7 +41,7 @@ class disk_cache:
         cache_path = cls.cache_path(key)
         if not path.exists(cache_path):
             return None
-        with open(cache_path, 'rb') as f:
+        with open(cache_path, "rb") as f:
             data = pickle.load(f)
         return data
 
@@ -106,7 +107,7 @@ class OCRDataset(Dataset):
 
 
 class BucketRandomSampler(Sampler):
-    def __init__(self, data_source: Dataset, batch_size: int):
+    def __init__(self, data_source: Dataset, batch_size: int, shuffle: bool = False):
         # Validate
         msg = "Please implement `get_bucket_key` function in your dataset. \
         The function should take a sample and return a hashable-key."
@@ -114,6 +115,7 @@ class BucketRandomSampler(Sampler):
 
         # Init
         super().__init__(data_source=data_source)
+        self.shuffle = shuffle
         self.batch_size = batch_size
         self.cache_key = f"sampler_bucket_{data_source.hash()}"
         self.data_source = data_source
@@ -144,17 +146,20 @@ class BucketRandomSampler(Sampler):
 
         # Collect indices
         indices = []
-        for b_indices in buckets.values():
-            indices.extend(b_indices)
+        for key in sorted(list(buckets.keys())):
+            indices.extend(buckets[key])
 
-        # Shuffle by partitions
-        partitions = []
-        for part in toolz.partition(batch_size, indices):
-            part = list(part)
-            random.shuffle(part)  # Shuffle inside each partition
-            partitions.append(part)
-        random.shuffle(partitions)  # Shuffle all the partitions
-        indices_iter = toolz.concat(partitions)  # this is already an iterator
+        if self.shuffle:  # Shuffling by batch
+            partitions = []
+            for part in toolz.partition(batch_size, indices):
+                part = list(part)
+                random.shuffle(part)  # Shuffle inside each partition
+                partitions.append(part)
+            random.shuffle(partitions)  # Shuffle all the partitions
+            indices_iter = toolz.concat(partitions)  # this is already an iterator
+        else:  # No shuffling
+            indices_iter = iter(indices)
+
         return indices_iter
 
 
@@ -244,8 +249,12 @@ def get_dataloader(
         dataset.get_bucket_key = datasets[0].get_bucket_key
 
     # Create loader
+    try:
+        shuffle = dataloader_kwargs.pop("shuffle")
+    except KeyError:
+        shuffle = False
     batch_size = dataloader_kwargs.get("batch_size", 1)
-    dataloader_kwargs["sampler"] = BucketRandomSampler(dataset, batch_size)
+    dataloader_kwargs["sampler"] = BucketRandomSampler(dataset, batch_size, shuffle=shuffle)
     dataloader_kwargs["collate_fn"] = collate_variable_width
     loader = DataLoader(dataset, **dataloader_kwargs)
     return loader
