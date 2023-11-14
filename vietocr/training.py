@@ -14,18 +14,9 @@ from .dataloaders import Sample, get_dataloader
 from .metrics import Avg, acc_full_sequence, acc_per_char
 from .models import OCRModel
 from .models.losses import CrossEntropyLoss, CTCLoss
+from .models.optim import CosineWWRD
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
-
-
-def get_lr_scheduler(optimizer, warmup: int):
-    def lr_lambda(step):
-        if step < warmup:
-            return step / warmup
-        else:
-            return 1
-
-    return optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 @dataclass
@@ -112,7 +103,13 @@ class Trainer:
         self.fabric = Fabric()
         # self.optimizer = NormalizedSGD(self.model.parameters(), **optim_config)
         self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
-        self.lr_scheduler = get_lr_scheduler(self.optimizer, warmup=500)
+        self.lr_scheduler = CosineWWRD(
+            self.optimizer,
+            total_steps=max_steps,
+            num_warmup_steps=1000,
+            cycle_length=30_000,
+            decay=0.99,
+        )
         self.criterion = CTCLoss(self.vocab)
 
         # ========
