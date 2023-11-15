@@ -1,4 +1,5 @@
 import random
+import traceback
 from typing import Tuple
 
 import albumentations as A
@@ -193,12 +194,62 @@ class ColorPatchOverlay(A.ImageOnlyTransform):
         return ["num_h_splits", "num_v_splits", "color_opacity"]
 
     def apply(self, img: np.ndarray, **params):
-        return random_patchwise_color_overlay(
-            img,
-            self.num_h_splits,
-            self.num_v_splits,
-            self.color_opacity,
-        )
+        # TODO:  Fix this shite
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1371, in _process_data
+        #     data.reraise()
+        #   File "/usr/local/lib/python3.11/site-packages/torch/_utils.py", line 644, in reraise
+        #     raise exception
+        # TypeError: Caught TypeError in DataLoader worker process 3.
+        # Original Traceback (most recent call last):
+        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/worker.py", line 308, in _worker_loop
+        #     data = fetcher.fetch(index)
+        #            ^^^^^^^^^^^^^^^^^^^^
+        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 51, in fetch
+        #     data = [self.dataset[idx] for idx in possibly_batched_index]
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 51, in <listcomp>
+        #     data = [self.dataset[idx] for idx in possibly_batched_index]
+        #             ~~~~~~~~~~~~^^^^^
+        #   File "/home/dev/working/vietocr/dataloaders.py", line 227, in __getitem__
+        #     return self.transform(sample)
+        #            ^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/working/vietocr/training.py", line 150, in transform
+        #     image = self.augment(image=image)["image"]
+        #             ^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/working/vietocr/augmentations/__init__.py", line 18, in __call__
+        #     return super().__call__(*a, **kw)
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/composition.py", line 210, in __call__
+        #     data = t(**data)
+        #            ^^^^^^^^^
+        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/composition.py", line 326, in __call__
+        #     data = t(force_apply=True, **data)
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/transforms_interface.py", line 118, in __call__
+        #     return self.apply_with_params(params, **kwargs)
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/transforms_interface.py", line 131, in apply_with_params
+        #     res[key] = target_function(arg, **dict(params, **target_dependencies))
+        #                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/working/vietocr/augmentations/custom_augmentations.py", line 196, in apply
+        #     return random_patchwise_color_overlay(
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "/home/dev/working/vietocr/augmentations/custom_augmentations.py", line 165, in random_patchwise_color_overlay
+        #     image[*region, :] = cv2.blendLinear(src, color, weights1, weights2)
+        #     ~~~~~^^^^^^^^^^^^
+        # TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
+        try:
+            return random_patchwise_color_overlay(
+                img,
+                self.num_h_splits,
+                self.num_v_splits,
+                self.color_opacity,
+            )
+        except Exception as f:
+            with open("error.txt", "rb+") as f:
+                f.write(traceback.format_exc())
+            return img
 
 
 def shift_blur(image, shift: int, vertical: bool):
