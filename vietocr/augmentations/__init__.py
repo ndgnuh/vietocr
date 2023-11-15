@@ -1,15 +1,12 @@
 import random
-from dataclasses import dataclass
-from typing import List
 
 import albumentations as A
 
 from .custom_augmentations import (
     ColorPatchOverlay,
-    FBMNoise,
-    RandomShiftBlur,
     ScaleDegrade,
 )
+from .fbm_noise import RandomFbmNoise
 
 
 class RandomOrderCompose(A.Compose):
@@ -55,7 +52,7 @@ def get_augmentation(p: float = 0.5):
             # Noises
             A.OneOf(
                 [
-                    FBMNoise(),
+                    RandomFbmNoise(),
                     A.ISONoise(),
                     A.MultiplicativeNoise(),
                 ],
@@ -79,7 +76,6 @@ def get_augmentation(p: float = 0.5):
                     A.Posterize(),
                     A.GlassBlur(sigma=0.1, max_delta=1, iterations=1),
                     A.MedianBlur(blur_limit=3),
-                    RandomShiftBlur(),
                     A.MotionBlur(),
                     A.ZoomBlur(max_factor=1.1),
                 ],

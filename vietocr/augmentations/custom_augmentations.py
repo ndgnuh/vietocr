@@ -1,10 +1,119 @@
 import random
 import traceback
-from typing import Tuple
+from dataclasses import field, make_dataclass
+from functools import wraps
+from inspect import getfullargspec
+from typing import Callable, Tuple
 
 import albumentations as A
 import cv2
 import numpy as np
+
+
+def rand(inputs):
+    """Input selection
+
+    If inputs is a tuple, the function randomize based on the tuple item types.
+    - Integer -> `random.rand_int`
+    - Float -> `rand.uniform`
+    - Bool -> `rand.choice`
+    If the inputs is a list, pick one of the items.
+    Otherwise, returns the input.
+
+    Args:
+        inputs (Tuple[int, int] | Tuple[float, float] | List[T] | S):
+            The input for selection
+    """
+    if isinstance(inputs, tuple):
+        a, b = inputs
+        if isinstance(a, int):
+            return random.randint(a, b)
+        if isinstance(a, bool):
+            return random.uniform(0, 1) <= 0.5
+        else:
+            return random.uniform(a, b)
+    elif isinstance(inputs, list):
+        return random.choice(inputs)
+    else:
+        return inputs
+
+
+def safe_run(fn, img: np.ndarray, **options):
+    """Try to run something, but in case of errors,
+    log to file and return original input image.
+
+    Args:
+        fn (Callable): The transform function.
+        img (np.ndarray):
+            The input image, in case of failure, the image will be returned.
+
+    Keywords:
+        **options (Dict): Options for the `fn` transform.
+    """
+    try:
+        return fn(img, **options)
+    except Exception:
+        with open("error.txt", "a+", encoding="utf-8") as f:
+            f.write(traceback.format_exc())
+        return img
+
+
+def make_transform(name: str, fn: Callable, Base=A.ImageOnlyTransform):
+    """A mild black magic function, make a transformation from
+    a functional transform.
+
+    Args:
+        name (str): Name of the transformation class.
+        fn (Callable):
+            The functional transformation, need to be annotated with default arguments.
+        Base (type):
+            The base class for the transformation.
+            The default is `A.ImageOnlyTransform`.
+    """
+    # +--------------------------+
+    # | Get fields from function |
+    # +--------------------------+
+    ann = getfullargspec(fn)
+    num_defaults = len(ann.defaults)
+    option_names = ann.args[-num_defaults:]
+    fields = []
+    for i in range(num_defaults):
+        arg = option_names[i]
+        type = ann.annotations[arg]
+        default = field(default=ann.defaults[i])
+        ds_field = (arg, type, default)
+        fields.append(ds_field)
+
+    # +---------------------------------------+
+    # | Make a dataclass to hold and validate |
+    # | the transformation function input     |
+    # +---------------------------------------+
+    ParamClass = make_dataclass(f"{name}Params", fields)
+
+    # +-----------------------------------+
+    # | The transformation function class |
+    # +-----------------------------------+
+    class TransformClass(Base):
+        def __init__(self, p=0.5, always_apply=False, **kwargs):
+            super().__init__(p=p, always_apply=always_apply)
+            self.params = vars(ParamClass(**kwargs))
+            for k, v in self.params.items():
+                setattr(self, k, v)
+            self.__doc__ = self.__class__.__doc__
+
+        def apply(self, img, **kwargs):
+            return safe_run(fn, img, **self.params)
+
+        def get_transform_init_args_names(self):
+            return option_names
+
+    # +---------------------------------------------------------+
+    # | Change global stuff, such as name, qualifier, docstring |
+    # +---------------------------------------------------------+
+    TransformClass.__name__ = name
+    TransformClass.__qualname__ = name
+    wraps(fn)(TransformClass.apply)
+    return TransformClass
 
 
 class FBMNoise(A.ImageOnlyTransform):
@@ -85,46 +194,34 @@ class FBMNoise(A.ImageOnlyTransform):
         )
 
 
-class ScaleDegrade(A.ImageOnlyTransform):
+def scale_degrade(img, scale: Tuple[float, float] = (1.2, 2.2)):
     """Degrade image by scale down width and height
 
     Args:
         min_scale (float): Min width/height scale
         max_scale (float): Max width/height scale
-        p (float): Augment probs, default `0.5`
-        always_apply (bool): Always apply, default `False`
     """
-
-    def __init__(
-        self,
-        min_scale: float = 1.2,
-        max_scale: float = 2.2,
-        p: float = 0.5,
-        always_apply: bool = False,
-    ):
-        super().__init__(p=p, always_apply=always_apply)
-        self.max_scale = max_scale
-        self.min_scale = min_scale
-        self.p = p
-
-    def get_transform_init_args_names(self):
-        return ["min_scale", "max_scale"]
-
-    def apply(self, img: np.ndarray, **params):
-        scale = random.uniform(self.min_scale, self.max_scale)
-        h, w = img.shape[:2]
-        img = cv2.resize(img, (int(w / scale), int(h / scale)))
-        img = cv2.resize(img, (w, h))
-        return img
+    scale = rand(scale)
+    h, w = img.shape[:2]
+    img = cv2.resize(img, (int(w / scale), int(h / scale)))
+    img = cv2.resize(img, (w, h))
+    return img
 
 
-def random_patchwise_color_overlay(
+def random_color_patch_overlay(
     image,
     num_h_splits: Tuple[int, int] = (1, 5),
     num_v_splits: Tuple[int, int] = (3, 20),
-    color_opacity: Tuple[float, float] = (0.7, 0.9),
+    color_opacity: Tuple[float, float] = (0.2, 0.5),
 ):
-    """See `ColorPatchOverlay`"""
+    """Overlay image with patches of random colors
+
+    Args:
+        image (ndarray): Input image.
+        num_h_splits (Tuple[int, int] | int): Number of row patches.
+        num_v_splits (Tuple[int, int] | int): Number of column patches.
+        color_opacity (Tuple[float, float] | float): The opacity of color patches.
+    """
     h, w, c = image.shape
     dtype = image.dtype
     image = np.copy(image)
@@ -159,133 +256,12 @@ def random_patchwise_color_overlay(
             color = np.random.randint(0, 256, (1, 1, c), dtype=dtype)
             src = image[*region, :]
             color = np.broadcast_to(color, src.shape)
-            weights2 = np.random.uniform(*color_opacity, src.shape[:2]).astype(
-                np.float32
-            )
+            weights2 = np.random.uniform(*color_opacity, src.shape[:2])
+            weights2 = weights2.astype(np.float32)
             weights1 = 1 - weights2
             image[*region, :] = cv2.blendLinear(src, color, weights1, weights2)
     return image
 
 
-class ColorPatchOverlay(A.ImageOnlyTransform):
-    """Overlay image patches with random color patches
-
-    Args:
-        image (np.ndarray): Image
-        num_h_splits (Tuple[int, int]): Min and maximum number of horizontal splits. Default: [1, 5].
-        num_v_splits (Tuple[int, int]): Min and maximum number of vertical splits. Default: [3, 30].
-        color_opacity (Tuple[float, float]): Blend ratio for color patch. Default: (0.1, 0.3).
-    """
-
-    def __init__(
-        self,
-        num_h_splits: Tuple[int, int] = (1, 5),
-        num_v_splits: Tuple[int, int] = (3, 30),
-        color_opacity: Tuple[float, float] = (0.1, 0.3),
-        p: float = 0.5,
-        always_apply: bool = False,
-    ):
-        super().__init__(p=p, always_apply=always_apply)
-        self.num_h_splits = num_h_splits
-        self.num_v_splits = num_v_splits
-        self.color_opacity = color_opacity
-
-    def get_transform_init_args_names(self):
-        return ["num_h_splits", "num_v_splits", "color_opacity"]
-
-    def apply(self, img: np.ndarray, **params):
-        # TODO:  Fix this shite
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/dataloader.py", line 1371, in _process_data
-        #     data.reraise()
-        #   File "/usr/local/lib/python3.11/site-packages/torch/_utils.py", line 644, in reraise
-        #     raise exception
-        # TypeError: Caught TypeError in DataLoader worker process 3.
-        # Original Traceback (most recent call last):
-        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/worker.py", line 308, in _worker_loop
-        #     data = fetcher.fetch(index)
-        #            ^^^^^^^^^^^^^^^^^^^^
-        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 51, in fetch
-        #     data = [self.dataset[idx] for idx in possibly_batched_index]
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/usr/local/lib/python3.11/site-packages/torch/utils/data/_utils/fetch.py", line 51, in <listcomp>
-        #     data = [self.dataset[idx] for idx in possibly_batched_index]
-        #             ~~~~~~~~~~~~^^^^^
-        #   File "/home/dev/working/vietocr/dataloaders.py", line 227, in __getitem__
-        #     return self.transform(sample)
-        #            ^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/working/vietocr/training.py", line 150, in transform
-        #     image = self.augment(image=image)["image"]
-        #             ^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/working/vietocr/augmentations/__init__.py", line 18, in __call__
-        #     return super().__call__(*a, **kw)
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/composition.py", line 210, in __call__
-        #     data = t(**data)
-        #            ^^^^^^^^^
-        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/composition.py", line 326, in __call__
-        #     data = t(force_apply=True, **data)
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/transforms_interface.py", line 118, in __call__
-        #     return self.apply_with_params(params, **kwargs)
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/.local/lib/python3.11/site-packages/albumentations/core/transforms_interface.py", line 131, in apply_with_params
-        #     res[key] = target_function(arg, **dict(params, **target_dependencies))
-        #                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/working/vietocr/augmentations/custom_augmentations.py", line 196, in apply
-        #     return random_patchwise_color_overlay(
-        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #   File "/home/dev/working/vietocr/augmentations/custom_augmentations.py", line 165, in random_patchwise_color_overlay
-        #     image[*region, :] = cv2.blendLinear(src, color, weights1, weights2)
-        #     ~~~~~^^^^^^^^^^^^
-        # TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'
-        try:
-            return random_patchwise_color_overlay(
-                img,
-                self.num_h_splits,
-                self.num_v_splits,
-                self.color_opacity,
-            )
-        except Exception as f:
-            with open("error.txt", "rb+") as f:
-                f.write(traceback.format_exc())
-            return img
-
-
-def shift_blur(image, shift: int, vertical: bool):
-    """Abberation without color"""
-    image = np.copy(image)
-    if vertical:
-        image[shift:, ...] = image[shift:, ...] * 0.5 + image[:-shift, ...] * 0.5
-    else:
-        image[:, shift:, ...] = (
-            image[:, shift:, ...] * 0.5 + image[:, :-shift, ...] * 0.5
-        )
-    return image
-
-
-class RandomShiftBlur(A.ImageOnlyTransform):
-    """See `shift_blur`
-
-    Args:
-        shift_range (Tuple[int, int]): Min and max shift pixel.
-    """
-
-    def __init__(
-        self,
-        shift_range: Tuple[int, int] = (1, 2),
-        p: float = 0.5,
-        always_apply: bool = True,
-    ):
-        super().__init__(p=p, always_apply=always_apply)
-        self.shift_range = shift_range
-
-    def apply(self, img, **kw):
-        verticals = random.choices([True, False], k=2)
-        for vertical in verticals:
-            shift = random.randint(*self.shift_range)
-            img = shift_blur(img, shift, vertical)
-        return img
-
-    def get_transform_init_args_names(self):
-        return ["shift_range"]
+ColorPatchOverlay = make_transform("ColorPatchOverlay", random_color_patch_overlay)
+ScaleDegrade = make_transform("ScaleDegrade", scale_degrade)
