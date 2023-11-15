@@ -19,6 +19,7 @@ def parse_args() -> Namespace:
     p.add_argument("--validate-every", type=int, default=2_000)
     p.add_argument("--batch-size", "-b", type=int, default=1)
     p.add_argument("--num-workers", "-p", type=int, default=0)
+    p.add_argument("--shuffle", action="store_true", default=False, help="Shuffle data")
 
     # Data
     p.add_argument("--train-data")

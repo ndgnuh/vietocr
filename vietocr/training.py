@@ -93,6 +93,7 @@ class Trainer:
         lr: float = 1e-3,
         batch_size: int = 1,
         num_workers: int = 0,
+        shuffle: bool = False,
     ):
         # +--------------------+
         # | TODO: Model config |
@@ -126,8 +127,8 @@ class Trainer:
         self.lr_scheduler = CosineWWRD(
             self.optimizer,
             total_steps=max_steps,
-            num_warmup_steps=1000,
-            cycle_length=30_000,
+            num_warmup_steps=30_000,
+            cycle_length=150_000,
             decay=0.99,
         )
         self.criterion = CTCLoss(self.vocab)
@@ -152,6 +153,7 @@ class Trainer:
             "batch_size": self.batch_size,
             "num_workers": num_workers,
             "pin_memory": True,
+            "shuffle": shuffle,
         }
         if train_data is not None:
             self.train_loader = get_dataloader(train_data, **kwargs)

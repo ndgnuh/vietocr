@@ -26,7 +26,7 @@ def resize_image(
     height: int,
     min_width: int,
     max_width: int,
-    rounding: int = 10,
+    rounding: int = 4,
     resampling: Image.Resampling = Image.Resampling.LANCZOS,
 ):
     """Resize input image using variable width and try to keep aspect ratio.
@@ -36,7 +36,9 @@ def resize_image(
         height (int): The target height
         min_width (int): Minimum target width
         max_width (int): Maximum target width
-        rounding (int): Round the target width to be dividable by this value.
+        rounding (int):
+            Round the target width to be dividable by this value.
+            Default is 4, which is the model patch width.
         resampling (PIL.Image.Resampling): Resampling method, default `PIL.Image.Resampling.LANCZOS`.
     """
     image_size = image.size
