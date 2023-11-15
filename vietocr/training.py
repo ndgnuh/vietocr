@@ -12,13 +12,16 @@ import random
 from dataclasses import dataclass
 from typing import Dict, Optional, Union
 
+import numpy as np
 import torch
 from lightning import Fabric
+from PIL import Image
 from tensorboardX import SummaryWriter
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from .augmentations import get_augmentation
 from .dataloaders import Sample, get_dataloader
 from .metrics import Avg, acc_full_sequence, acc_per_char
 from .models import CosineWWRD, CTCLoss, OCRModel
@@ -41,7 +44,7 @@ class ModelConfig:
 
 @torch.no_grad()
 def normalize_grad_(parameters):
-    nn.utils.clip_grad_norm_(parameters, 1)
+    nn.utils.clip_grad_norm_(parameters, 10)
     # from copy import copy
     # num_params = len(copy(parameters))
     # scale = 1.
@@ -88,6 +91,7 @@ class Trainer:
         val_data: Optional[str] = None,
         test_data: Optional[str] = None,
         # Training
+        aug_prob: float = 0.5,
         max_steps: int = 100_000,
         validate_every: int = 2_000,
         lr: float = 1e-3,
@@ -127,8 +131,8 @@ class Trainer:
         self.lr_scheduler = CosineWWRD(
             self.optimizer,
             total_steps=max_steps,
-            num_warmup_steps=30_000,
-            cycle_length=150_000,
+            num_warmup_steps=max_steps // 3,
+            num_cycles=1,
             decay=0.99,
         )
         self.criterion = CTCLoss(self.vocab)
@@ -136,9 +140,15 @@ class Trainer:
         # +-------------------------------+
         # | Pre-process data for training |
         # +-------------------------------+
+        self.augment = get_augmentation(aug_prob)
+
         def transform(sample: Sample) -> Sample:
             image = sample.image
             image = image.convert("RGB")
+            if self.augment is not None:
+                image = np.array(image)
+                image = self.augment(image=image)["image"]
+                image = Image.fromarray(image)
             image = resize_image(image, image_height, image_min_width, image_max_width)
             target = self.vocab.encode(sample.target)
             new_sample = Sample(image, target)

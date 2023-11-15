@@ -125,6 +125,7 @@ class BucketRandomSampler(Sampler):
             disk_cache.save_cache(self.cache_key, self.buckets)
         else:
             self.buckets = buckets
+        print("Buckets by widths", sorted(list(self.buckets.keys())))
 
     def build_bucket_indices(self):
         # IO bound, threads won't help
