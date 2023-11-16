@@ -2,6 +2,7 @@
 from collections import OrderedDict
 from typing import Tuple
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -22,32 +23,34 @@ def get_width_for_height(image_wh: Tuple[int, int], desired_height: int) -> int:
 
 
 def resize_image(
-    image: Image.Image,
+    image: np.ndarray,
     height: int,
     min_width: int,
     max_width: int,
     rounding: int = 4,
-    resampling: Image.Resampling = Image.Resampling.LANCZOS,
+    resampling: int = cv2.INTER_LINEAR,
 ):
     """Resize input image using variable width and try to keep aspect ratio.
 
     Args:
-        image (PIL.Image.Image): Image to resize
+        image (np.ndarray): Image to resize
         height (int): The target height
         min_width (int): Minimum target width
         max_width (int): Maximum target width
         rounding (int):
             Round the target width to be dividable by this value.
             Default is 4, which is the model patch width.
-        resampling (PIL.Image.Resampling): Resampling method, default `PIL.Image.Resampling.LANCZOS`.
+        resampling (int): Resampling method, default `cv2.INTER_LINEAR`.
     """
-    image_size = image.size
+    H, W = image.shape[:2]
+    image_size = (W, H)
     width = get_width_for_height(image_size, height)
     width = max(width, min_width)
     width = min(width, max_width)
-    width = int(width / rounding) * rounding
+    width = int(round(width / rounding)) * rounding
     new_size = (width, height)
-    return image.resize(new_size, resampling)
+    image = cv2.resize(image, new_size)
+    return image
 
 
 def load_state_dict_whatever(model, state_dict: OrderedDict):
@@ -117,7 +120,9 @@ def create_letterbox_pil(
     if w == width and h == height:
         return image
 
-    # Find new size and padding origin
+    # +----------------------------------+
+    # | Find new size and padding origin |
+    # +----------------------------------+
     src_ratio = w / h
     tgt_ratio = width / height
     if tgt_ratio > src_ratio:
@@ -131,11 +136,65 @@ def create_letterbox_pil(
         pad_y = int((height - new_height) / 2)
         pad_x = 0
 
-    # resize and letter box
+    # +-----------------------+
+    # | resize and letter box |
+    # +-----------------------+
     image = image.resize(new_size, Image.Resampling.LANCZOS)
     lb_image = Image.new("RGB", (width, height), fill_color)
     lb_image.paste(image, (pad_x, pad_y))
     return lb_image
+
+
+def create_letterbox_cv2(
+    image: np.ndarray,
+    width: int,
+    height: int,
+    fill_color: Tuple[int, int, int] = (127, 127, 127),
+) -> Image.Image:
+    """Return a letterboxed version of the provided image to fit specified dimensions.
+
+    This function resizes the input image to fit within a letterbox (a container with fixed width and height) while maintaining the image's aspect ratio. If the image already matches the specified dimensions, the original image is returned.
+
+    The original image is placed in the center of the letterbox.
+
+    Args:
+        image (np.ndarray): The input image to be resized and letterboxed.
+        width (int): The desired width of the letterbox.
+        height (int): The desired height of the letterbox.
+        fill_color (Tuple[int, int, int]):
+            The RGB color tuple used to fill the letterbox.
+            Default: (127, 127, 127).
+
+    Returns:
+        Image.Image: The resulting PIL image after the letterboxing process.
+    """
+    h, w = image.shape[:2]
+    if w == width and h == height:
+        return image
+
+    # +----------------------------------+
+    # | Find new size and padding origin |
+    # +----------------------------------+
+    src_ratio = w / h
+    tgt_ratio = width / height
+    if tgt_ratio > src_ratio:
+        new_width = int(src_ratio * height)
+        new_size = (new_width, height)
+        pad_x = int((width - new_width) / 2)
+        pad_y = 0
+    else:
+        new_height = int(width / src_ratio)
+        new_size = (width, new_height)
+        pad_y = int((height - new_height) / 2)
+        pad_x = 0
+
+    # +-----------------------+
+    # | resize and letter box |
+    # +-----------------------+
+    pads = [pad_y, pad_y, pad_x, pad_x]
+    image = cv2.resize(image, new_size, cv2.INTER_LANCZOS4)
+    image = cv2.copyMakeBorder(image, *pads, borderType=cv2.BORDER_CONSTANT, value=fill_color)
+    return image
 
 
 def pil_to_numpy(image: Image.Image) -> np.ndarray:

@@ -4,8 +4,9 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass
 from os import makedirs, path
-from typing import Callable, Hashable, List, Optional, Tuple
+from typing import Callable, Hashable, List, Optional, Tuple, Union
 
+import cv2
 import numpy as np
 import toolz
 import torch
@@ -14,7 +15,7 @@ from PIL import Image
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, Sampler
 from tqdm import tqdm
 
-from .tools import create_letterbox_pil, pil_to_numpy
+from .tools import create_letterbox_cv2, create_letterbox_pil, pil_to_numpy
 
 
 class disk_cache:
@@ -50,8 +51,8 @@ class disk_cache:
 class Sample:
     """Row-based data structure for data sample"""
 
-    image: Image.Image
-    target: List[int]
+    image: np.ndarray
+    target: Union[List[int], str]
 
     @property
     def target_length(self) -> int:
@@ -95,7 +96,7 @@ class OCRDataset(Dataset):
 
     def __getitem__(self, i: int) -> Sample:
         image_path, label = self.samples[i]
-        image = Image.open(image_path)
+        image = cv2.imread(image_path, cv2.IMREAD_COLOR)
         sample = Sample(image=image, target=label)
         if self.transform is not None:
             return self.transform(sample)
@@ -103,17 +104,21 @@ class OCRDataset(Dataset):
             return sample
 
     def get_bucket_key(self, sample: Sample) -> Hashable:
-        return sample.image.width
+        return sample.image.shape[1]  # image width
 
 
 class BucketRandomSampler(Sampler):
     def __init__(self, data_source: Dataset, batch_size: int, shuffle: bool = False):
-        # Validate
+        # +-----------------------------------+
+        # | Check for the bucket key function |
+        # +-----------------------------------+
         msg = "Please implement `get_bucket_key` function in your dataset. \
         The function should take a sample and return a hashable-key."
         assert hasattr(data_source, "get_bucket_key"), msg
 
-        # Init
+        # +---------------+
+        # | Store options |
+        # +---------------+
         super().__init__(data_source=data_source)
         self.shuffle = shuffle
         self.batch_size = batch_size
@@ -128,7 +133,9 @@ class BucketRandomSampler(Sampler):
         print("Buckets by widths", sorted(list(self.buckets.keys())))
 
     def build_bucket_indices(self):
-        # IO bound, threads won't help
+        # +-----------------------------------------------+
+        # | Image read is IO bound, so threads won't help |
+        # +-----------------------------------------------+
         data_source = self.data_source
         buckets = defaultdict(list)
         n = len(data_source)
@@ -145,18 +152,24 @@ class BucketRandomSampler(Sampler):
         batch_size = self.batch_size
         buckets = self.buckets
 
-        # Collect indices
+        # +-----------------+
+        # | Collect indices |
+        # +-----------------+
         indices = []
         for key in sorted(list(buckets.keys())):
             indices.extend(buckets[key])
 
+        # +---------------------------------------------------+
+        # | If shuffling is needed,                           |
+        # | perform batched shuffling to not mess up the size |
+        # | if not, use incrementing data size                |
+        # +---------------------------------------------------+
         if self.shuffle:  # Shuffling by batch
             partitions = []
             for part in toolz.partition(batch_size, indices):
                 part = list(part)
-                random.shuffle(part)  # Shuffle inside each partition
-                partitions.append(part)
-            random.shuffle(partitions)  # Shuffle all the partitions
+                random.shuffle(part)  # Shuffle inside each partition partitions.append(part) random.
+            shuffle(partitions)  # Shuffle all the partitions 
             indices_iter = toolz.concat(partitions)  # this is already an iterator
         else:  # No shuffling
             indices_iter = iter(indices)
@@ -167,35 +180,45 @@ class BucketRandomSampler(Sampler):
 def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
     pad_id = pad_token_id
 
-    # Find out max metrics
+    # +----------------------+
+    # | Find out max metrics |
+    # +----------------------+
     max_height = -1
     max_width = -1
     max_target_length = -1
     for image, target, target_length in samples:
         # Max image width
-        max_width = max(image.width, max_width)
-        max_height = max(image.height, max_height)
+        max_width = max(image.shape[1], max_width)
+        max_height = max(image.shape[0], max_height)
 
         # Max target length
         max_target_length = max(target_length, max_width)
 
-    # Padding + convert to columnars
+    # +--------------------------------+
+    # | Padding + convert to columnars |
+    # +--------------------------------+
     images = []
     targets = []
     target_lengths = []
     for image, target, target_length in samples:
-        # Process image
-        image = create_letterbox_pil(image, max_width, max_height)
-        image = pil_to_numpy(image)
+        # +-----------------------------------------------------------+
+        # | Process image, letterbox and to move channel to first dim |
+        # +-----------------------------------------------------------+
+        image = create_letterbox_cv2(image, max_width, max_height)
+        image = (image.astype('float32') / 255).transpose(2, 0, 1)
         images.append(image)
 
-        # Process target
+        # +----------------+
+        # | Process target |
+        # +----------------+
         pad_length = max_target_length - target_length
         target = target + [pad_id] * pad_length
         targets.append(target)
         target_lengths.append(target_length)
 
-    # To tensor
+    # +--------------------+
+    # | Convert to tensors |
+    # +--------------------+
     images = torch.tensor(np.stack(images, axis=0))
     targets = torch.tensor(targets)
     target_lengths = torch.tensor(target_lengths)
@@ -204,7 +227,7 @@ def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
 
 class OCRRecordDataset(OCRDataset):
     def __init__(self, data_path, transform):
-        loaders = [io.load_pil, io.load_str]
+        loaders = [io.load_cv2, io.load_str]
         self.data_path = data_path
         self.data = IndexedRecordDataset(data_path, deserializers=loaders)
         self.transform = transform
@@ -241,7 +264,9 @@ def get_dataloader(
     transform: Optional[Callable] = None,
     **dataloader_kwargs,
 ):
-    # Create dataset or datasets
+    # +----------------------------+
+    # | Create dataset or datasets |
+    # +----------------------------+
     if isinstance(annotation_path, str):
         dataset = get_dataset(annotation_path, transform)
     else:
@@ -249,13 +274,17 @@ def get_dataloader(
         dataset = ConcatDataset(datasets)
         dataset.get_bucket_key = datasets[0].get_bucket_key
 
-    # Create loader
+    # +---------------------------------------+
+    # | Create dataloader, sampled by buckets |
+    # +---------------------------------------+
     try:
         shuffle = dataloader_kwargs.pop("shuffle")
     except KeyError:
         shuffle = False
     batch_size = dataloader_kwargs.get("batch_size", 1)
-    dataloader_kwargs["sampler"] = BucketRandomSampler(dataset, batch_size, shuffle=shuffle)
+    dataloader_kwargs["sampler"] = BucketRandomSampler(
+        dataset, batch_size, shuffle=shuffle
+    )
     dataloader_kwargs["collate_fn"] = collate_variable_width
     loader = DataLoader(dataset, **dataloader_kwargs)
     return loader

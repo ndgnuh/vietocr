@@ -84,8 +84,8 @@ class Trainer:
         lang: str,
         vocab_type: str = "ctc",
         image_height: int = 32,
-        image_min_width: int = 30,
-        image_max_width: int = 520,
+        image_min_width: int = 28,
+        image_max_width: int = 768,
         # Data
         train_data: Optional[str] = None,
         val_data: Optional[str] = None,
@@ -107,7 +107,6 @@ class Trainer:
             "image_height": image_height,
         }
         head_config = "linear"
-        optim_config = {"lr": lr, "momentum": 0.009, "weight_decay": 1e-5}
 
         # +-----------+
         # | Modelling |
@@ -127,6 +126,7 @@ class Trainer:
         # +--------------+
         # | Optimization |
         # +--------------+
+        optim_config = {"lr": lr, "momentum": 0.009, "weight_decay": 1e-5}
         self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
         self.lr_scheduler = CosineWWRD(
             self.optimizer,
@@ -144,11 +144,8 @@ class Trainer:
 
         def transform(sample: Sample) -> Sample:
             image = sample.image
-            image = image.convert("RGB")
             if self.augment is not None:
-                image = np.array(image)
                 image = self.augment(image=image)["image"]
-                image = Image.fromarray(image)
             image = resize_image(image, image_height, image_min_width, image_max_width)
             target = self.vocab.encode(sample.target)
             new_sample = Sample(image, target)

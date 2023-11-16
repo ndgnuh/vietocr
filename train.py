@@ -11,8 +11,8 @@ def parse_args() -> Namespace:
     p.add_argument("--lang", required=True)
     p.add_argument("--vocab-type", default="ctc")
     p.add_argument("--image-height", type=int, default=32)
-    p.add_argument("--image-min-width", type=int, default=32)
-    p.add_argument("--image-max-width", type=int, default=512)
+    p.add_argument("--image-min-width", type=int, default=28)
+    p.add_argument("--image-max-width", type=int, default=768)
 
 
     # +----------------+

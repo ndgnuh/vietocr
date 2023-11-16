@@ -2,14 +2,11 @@ import random
 
 import albumentations as A
 
-from .custom_augmentations import (
-    ColorPatchOverlay,
-    ScaleDegrade,
-)
-from .fbm_noise import RandomFbmNoise
-from .chromatic_abberation import ChromaticAberration
 from .bloom_filter import BloomFilter
+from .chromatic_abberation import ChromaticAberration
+from .custom_augmentations import ColorPatchOverlay, ScaleDegrade
 from .fake_light import FakeLight
+from .fbm_noise import RandomFbmNoise
 
 
 class RandomOrderCompose(A.Compose):
@@ -18,24 +15,34 @@ class RandomOrderCompose(A.Compose):
         return super().__call__(*a, **kw)
 
 
+def dummy_transform(image):
+    return dict(image=image)
+
+
 def get_augmentation(p: float = 0.5):
-    if p < 0:
-        return None
+    # +--------------------------------------------------------------+
+    # | If probability is less than 0, return a dummy transformation |
+    # +--------------------------------------------------------------+
+    if p <= 0:
+        return dummy_transform
 
     default_augment = RandomOrderCompose(
         [
-            # Overlay
+            # +----------------------------------------+
+            # | Overlay with some kind of color filter |
+            # +----------------------------------------+
             A.OneOf(
                 [
                     ColorPatchOverlay(),
                     FakeLight(),
                     BloomFilter(),
                     ChromaticAberration(),
-                    # PatternOverlay(patterns="vietocr/data/patterns", p=1),
                 ],
                 p=p,
             ),
-            # Changing image coloring
+            # +-------------------------+
+            # | Changing image coloring |
+            # +-------------------------+
             A.OneOf(
                 [
                     A.CLAHE(),
@@ -50,12 +57,16 @@ def get_augmentation(p: float = 0.5):
                 ],
                 p=p,
             ),
-            # Overlays
-            # Fog, snow, sunflare are disabled
-            # due to deadlock bug and readability
-            # https://github.com/albumentations-team/albumentations/issues/361
+            # +------------------------------------------------------------------+
+            # | Road overlays, weird                                             |
+            # | Fog, snow, sunflare are disabled                                 |
+            # | due to deadlock bug and readability                              |
+            # | https://github.com/albumentations-team/albumentations/issues/361 |
+            # +------------------------------------------------------------------+
             A.RandomShadow(p=p),
-            # Noises
+            # +---------------+
+            # | Random noises |
+            # +---------------+
             A.OneOf(
                 [
                     RandomFbmNoise(),
@@ -64,7 +75,9 @@ def get_augmentation(p: float = 0.5):
                 ],
                 p=p,
             ),
-            # Dropouts
+            # +-----------------+
+            # | Random dropouts |
+            # +-----------------+
             A.OneOf(
                 [
                     A.PixelDropout(),
@@ -72,7 +85,9 @@ def get_augmentation(p: float = 0.5):
                 ],
                 p=p,
             ),
-            # Image degration
+            # +------------------------+
+            # | Random image degration |
+            # +------------------------+
             A.OneOf(
                 [
                     A.ImageCompression(),
@@ -87,7 +102,9 @@ def get_augmentation(p: float = 0.5):
                 ],
                 p=p,
             ),
-            # Spatial transform
+            # +-------------------------+
+            # | Spatial transformations |
+            # +-------------------------+
             A.OneOf(
                 [
                     A.ElasticTransform(alpha=1, sigma=1, alpha_affine=1),
@@ -105,4 +122,8 @@ def get_augmentation(p: float = 0.5):
             ),
         ]
     )
+
+    # +------------------------------+
+    # | Return composed augmentation |
+    # +------------------------------+
     return default_augment
