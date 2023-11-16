@@ -168,8 +168,9 @@ class BucketRandomSampler(Sampler):
             partitions = []
             for part in toolz.partition(batch_size, indices):
                 part = list(part)
-                random.shuffle(part)  # Shuffle inside each partition partitions.append(part) random.
-            shuffle(partitions)  # Shuffle all the partitions 
+                random.shuffle(part)  # Shuffle inside each partition
+                partitions.append(part)
+            random.shuffle(partitions)  # Shuffle all the partitions 
             indices_iter = toolz.concat(partitions)  # this is already an iterator
         else:  # No shuffling
             indices_iter = iter(indices)
