@@ -6,7 +6,15 @@ import numpy as np
 from .custom_augmentations import make_transform
 
 
-def random_fbm_noise(img: np.ndarray, noise_opacity: Tuple[float, float]):
+def random_fbm_noise(img: np.ndarray, noise_opacity: Tuple[float, float] = (0.3, 0.7)):
+    """Apply fractional brownian noise to the image.
+
+    Args:
+        img (np.ndarray): Input image.
+
+    Keywords:
+        noise_opacity (Tuple[float, float]): Noise opacity range. Default: (0.3, 0.7).
+    """
     h, w, c = img.shape
 
     # +--------------------+

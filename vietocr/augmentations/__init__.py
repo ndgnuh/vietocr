@@ -7,6 +7,9 @@ from .custom_augmentations import (
     ScaleDegrade,
 )
 from .fbm_noise import RandomFbmNoise
+from .chromatic_abberation import ChromaticAberration
+from .bloom_filter import BloomFilter
+from .fake_light import FakeLight
 
 
 class RandomOrderCompose(A.Compose):
@@ -25,6 +28,9 @@ def get_augmentation(p: float = 0.5):
             A.OneOf(
                 [
                     ColorPatchOverlay(),
+                    FakeLight(),
+                    BloomFilter(),
+                    ChromaticAberration(),
                     # PatternOverlay(patterns="vietocr/data/patterns", p=1),
                 ],
                 p=p,
