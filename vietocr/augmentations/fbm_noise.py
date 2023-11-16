@@ -43,7 +43,7 @@ def seeded_random(positions, seed0, seed1):
     return noise
 
 
-def gen_fbm(self, positions):
+def gen_fbm(positions):
     seed0 = np.random.uniform(0, 100, (1, 2))
     seed1 = np.random.uniform(0, 10000)
     value = 0

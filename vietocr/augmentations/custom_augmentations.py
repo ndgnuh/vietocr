@@ -53,8 +53,10 @@ def safe_run(fn, img: np.ndarray, **options):
     try:
         return fn(img, **options)
     except Exception:
+        trace = traceback.format_exc()
+        print(trace)
         with open("error.txt", "a+", encoding="utf-8") as f:
-            f.write(traceback.format_exc())
+            f.write(trace)
         return img
 
 
