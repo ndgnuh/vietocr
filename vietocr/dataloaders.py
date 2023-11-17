@@ -2,6 +2,7 @@ import hashlib
 import pickle
 import random
 from collections import defaultdict
+from copy import deepcopy
 from dataclasses import dataclass
 from os import makedirs, path
 from typing import Callable, Hashable, List, Optional, Tuple, Union
@@ -11,11 +12,10 @@ import numpy as np
 import toolz
 import torch
 from dsrecords import IndexedRecordDataset, io
-from PIL import Image
 from torch.utils.data import ConcatDataset, DataLoader, Dataset, Sampler
 from tqdm import tqdm
 
-from .tools import create_letterbox_cv2, create_letterbox_pil, pil_to_numpy
+from .tools import create_letterbox_cv2, create_letterbox_pil, resize_image
 
 
 class disk_cache:
@@ -133,10 +133,20 @@ class BucketRandomSampler(Sampler):
         print("Buckets by widths", sorted(list(self.buckets.keys())))
 
     def build_bucket_indices(self):
+        # +-------------------------------------------------------------+
+        # | Replace transform with no augmentation for faster bucketing |
+        # +-------------------------------------------------------------+
+        data_source = deepcopy(self.data_source)
+
+        def transform(sample: Sample) -> Sample:
+            sample.image = resize_image(sample.image, 32, 28, 786, 4)
+            return sample
+
+        data_source.transform = transform
+
         # +-----------------------------------------------+
         # | Image read is IO bound, so threads won't help |
         # +-----------------------------------------------+
-        data_source = self.data_source
         buckets = defaultdict(list)
         n = len(data_source)
         for i in tqdm(range(n), "Building bucket", leave=False):
@@ -170,7 +180,7 @@ class BucketRandomSampler(Sampler):
                 part = list(part)
                 random.shuffle(part)  # Shuffle inside each partition
                 partitions.append(part)
-            random.shuffle(partitions)  # Shuffle all the partitions 
+            random.shuffle(partitions)  # Shuffle all the partitions
             indices_iter = toolz.concat(partitions)  # this is already an iterator
         else:  # No shuffling
             indices_iter = iter(indices)
@@ -206,7 +216,7 @@ def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
         # | Process image, letterbox and to move channel to first dim |
         # +-----------------------------------------------------------+
         image = create_letterbox_cv2(image, max_width, max_height)
-        image = (image.astype('float32') / 255).transpose(2, 0, 1)
+        image = (image.astype("float32") / 255).transpose(2, 0, 1)
         images.append(image)
 
         # +----------------+
