@@ -1,24 +1,36 @@
+# +----------+
+# | Old deps |
+# +----------+
 pyyaml
 gdown
-numpy
-six
 requests
 lmdb
-opencv-python-headless
 matplotlib
 prefetch_generator
 einops
-unidecode
 icecream
-albumentations
 crc32c
 
 
-# Torch related
+# +------------------------+
+# | Torch related packages |
+# +------------------------+
 torch
 torchvision 
-
-git+https://gitlab.com/ndgnuh/dsrecords.git
-tensorboardX
 lightning
+tensorboardX
+
+# +-----------------+
+# | Data processing |
+# +-----------------+
+numpy
+git+https://gitlab.com/ndgnuh/dsrecords.git
+opencv-python-headless
+albumentations
+unidecode
+
+# +-----------------------+
+# | Onnx related packages |
+# +-----------------------+
+onnxruntime
 onnx
