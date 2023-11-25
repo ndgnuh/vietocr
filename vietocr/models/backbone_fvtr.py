@@ -1,11 +1,40 @@
 # This version SHOULD be exportable...
 
 import math
+from functools import cached_property
 from typing import List, Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
+
+
+class ToFiber(nn.Module):
+    @cached_property
+    def permutation(self):
+        b, c, h, w = range(4)
+        return (b, w, h, c)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = x.permute(self.permutation)
+        x = x.flatten(1, 2)
+        return x, (H, W)
+
+
+class ToImage(nn.Module):
+    @cached_property
+    def permutation(self):
+        b, l, c = range(3)
+        return (b, c, l)
+
+    def forward(self, x, size):
+        H, W = size
+        B, L, C = x.shape
+        x = x.permute(self.permutation)
+        x = x.reshape(B, C, W, H)
+        x = x.transpose(-1, -2)
+        return x
 
 
 def skew(orig_x, padding_value):
@@ -137,7 +166,12 @@ class FVTREmbedding(nn.Module):
     ):
         super().__init__()
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size, kernel_size=5, stride=4, padding=1),
+            nn.Conv2d(
+                image_channel,
+                hidden_size,
+                kernel_size=(5, 3),
+                stride=(4, 2),
+            ),
             nn.SELU(True),
         )
         with torch.no_grad():
@@ -155,21 +189,26 @@ class FVTREmbedding(nn.Module):
 
 
 class CombiningBlock(nn.Module):
-    def __init__(self, input_size, output_size, num_attention_heads, dropout=0.1):
+    def __init__(
+        self,
+        input_size,
+        output_size,
+        num_attention_heads,
+        dropout=0.1,
+    ):
         super().__init__()
         self.output = nn.Sequential(
             nn.Linear(input_size, output_size),
-            nn.SELU(True),
-            nn.Dropout(dropout),
+            nn.GELU(),
         )
 
-    def forward(self, images):
-        # b c h w -> b c w
-        out = images.mean(dim=2)
-        # b c w -> b w c
-        out = out.transpose(1, 2)
-        out = self.output(out)
-        return out
+    def forward(self, x: Tensor):
+        # b c h w -> b c w h -> b c wh -> b wh c
+        x = x.transpose(-2, -1)
+        x = x.flatten(2)
+        x = x.transpose(-2, -1)
+        x = self.output(x)
+        return x
 
 
 class MergingBlock(nn.Module):
@@ -186,11 +225,15 @@ class MergingBlock(nn.Module):
 
     def forward(self, x):
         out = self.conv(x)
-        # n c h w -> n h w c
-        out = out.permute((0, 2, 3, 1))
+
+        # == n c h w -> n h w c ==
+        b, c, h, w = range(4)
+        out = out.permute((b, w, h, c))
         out = self.norm(out)
-        # n h w c -> n c h w
-        out = out.permute((0, 3, 1, 2))
+
+        # == n h w c -> n c h w ==
+        b, w, h, c = range(4)
+        out = out.permute(b, c, h, w)
         return out
 
 
@@ -209,10 +252,8 @@ class MixerBlock(nn.Module):
         self.mixer_dropout = nn.Dropout(attn_dropout)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
-            nn.SELU(True),
-            nn.Dropout(dropout),
+            nn.GELU(),
             nn.Linear(hidden_size * 4, hidden_size),
-            nn.Dropout(dropout),
         )
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
@@ -270,12 +311,12 @@ class FVTRStage(nn.Module):
 
         self.mixing_blocks = mixing_blocks
         self.merging = merging
+        self.to_image = ToImage()
+        self.to_fiber = ToFiber()
 
     def forward(self, image: Tensor):
-        c, h, w = image.shape[-3:]
-        # b c h w -> b w h c -> h (w h) c
-        x = image.transpose(-1, -3)
-        x = x.reshape(-1, (w * h), c)
+        x, size = self.to_fiber(image)
+
         if self.gen_mask is None:
             mask = None
         else:
@@ -288,9 +329,7 @@ class FVTRStage(nn.Module):
                 x = block(x, mask=None)
 
         # b (w h) c -> b w h c -> b c h w
-        x = x.reshape(-1, w, h, c)
-        x = x.transpose(-1, -3)
-
+        x = self.to_image(x, size)
         x = self.merging(x)
         return x
 
