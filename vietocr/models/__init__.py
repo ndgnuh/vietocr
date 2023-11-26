@@ -4,7 +4,7 @@ from typing import Dict, Union
 import torch
 from torch import Tensor, nn
 
-from . import backbone_fvtr, backbone_mlp_mixer, heads
+from . import backbone_fvtr, backbone_mlp_mixer, backbone_resnet, heads
 from .losses import CrossEntropyLoss, CTCLoss
 from .optim import CosineWWRD
 
@@ -21,6 +21,7 @@ assert CTCLoss
 BACKBONES = {}
 BACKBONES.update(backbone_mlp_mixer.MODULES)
 BACKBONES.update(backbone_fvtr.MODULES)
+BACKBONES.update(backbone_resnet.MODULES)
 
 # +--------------------------------------------+
 # | Dictionary of all prediction heads by name |

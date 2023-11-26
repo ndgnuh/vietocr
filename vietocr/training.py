@@ -8,16 +8,16 @@ Vim did it.
 # | Nice isn't it |
 # +---------------+
 """
+import math
 import random
 from dataclasses import dataclass
 from typing import Dict, Optional, Union
 
-import numpy as np
 import torch
 from lightning import Fabric
-from PIL import Image
 from tensorboardX import SummaryWriter
 from torch import nn, optim
+from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -25,6 +25,7 @@ from .augmentations import get_augmentation
 from .dataloaders import Sample, get_dataloader
 from .metrics import Avg, acc_full_sequence, acc_per_char
 from .models import CosineWWRD, CTCLoss, OCRModel
+# from .models.losses import HungarianCTCLoss
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
 
@@ -46,16 +47,15 @@ class ModelConfig:
 def normalize_grad_(parameters):
     nn.utils.clip_grad_norm_(parameters, 10)
     # from copy import copy
-    # num_params = len(copy(parameters))
     # scale = 1.
-    # for p in parameters:
-    #     if p.grad is None:
-    #         continue
+    for p in parameters:
+        if p.grad is None:
+            print(f"Parameter {id(p)} has no gradient, skipping")
+            continue
 
-    #     grad = p.grad
-    #     dim = min(1, grad.dim)
-    #     p.grad.data = F.normalize(p.grad.data, dim=dim) * scale
-    #     scale = scale * 0.999
+        grad = p.grad
+        dim = min(1, grad.dim)
+        p.grad.data = F.normalize(p.grad.data, dim=dim)
 
 
 @dataclass
@@ -69,12 +69,18 @@ class DataIter:
 
     def __iter__(self):
         step = 1
+        batch_idx = 0
         while True:
             for i, data in enumerate(self.dataloader):
-                yield step, data
+                target_lengths = data[2]
+                masks = target_lengths > 0
+                if torch.count_nonzero(masks) == 0:
+                    continue
+                yield step, batch_idx, data
                 step = step + 1
                 if step > self.total_steps:
                     return
+            batch_idx = batch_idx + 1
 
 
 class Trainer:
@@ -106,6 +112,7 @@ class Trainer:
             "name": "fvtr_t",
             "image_height": image_height,
         }
+        backbone_config = "tr_resnet18"
         head_config = "linear"
 
         # +-----------+
@@ -119,21 +126,30 @@ class Trainer:
         # | TODO: model loading |
         # +---------------------+
         try:
-            self.model.load_state_dict(torch.load("./model.pt", map_location="cpu"))
+            weights = torch.load("./model.pt", map_location="cpu")
+            self.model.load_state_dict(weights)
         except Exception:
             pass
 
         # +--------------+
         # | Optimization |
         # +--------------+
-        optim_config = {"lr": lr, "momentum": 0.009, "weight_decay": 1e-5}
-        self.optimizer = optim.SGD(self.model.parameters(), **optim_config)
+        n = int(max_steps / 10_000)
+        self.optimizer = optim.SGD(
+            self.model.parameters(),
+            momentum=1e-4,
+            lr=lr,
+            weight_decay=1e-5,
+            nesterov=True,
+        )
         self.lr_scheduler = CosineWWRD(
             self.optimizer,
             total_steps=max_steps,
-            num_warmup_steps=max_steps // 3,
-            num_cycles=1,
-            decay=0.99,
+            num_warmup_steps=1000,
+            cycle_length=max_steps,
+            start_ratio=1,
+            peak_ratio=1,
+            decay=math.pow(1e-6 / lr, 1 / n),
         )
         self.criterion = CTCLoss(self.vocab)
 
@@ -302,7 +318,7 @@ class Trainer:
         # | Training loop |
         # +---------------+
         pbar = tqdm(train_loader, "Train", dynamic_ncols=True)
-        for step, (images, targets, target_lengths) in pbar:
+        for step, batch_idx, (images, targets, target_lengths) in pbar:
             # +-------------------------+
             # | Forward/backward/update |
             # +-------------------------+
@@ -310,6 +326,7 @@ class Trainer:
             outputs = model(images)
             loss = self.criterion(outputs, targets, target_lengths)
             loss.backward()
+            normalize_grad_(model.parameters())
             optimizer.step()
             lr_scheduler.step()
 
@@ -322,7 +339,7 @@ class Trainer:
             # +---------------------------------------+
             # | Show sample predictions every N steps |
             # +---------------------------------------+
-            if step % 2000 == 0:
+            if step % 200 == 0:
                 scores, predicts = model.post_process(outputs)
                 predicts = predicts.detach().cpu()
                 targets = targets.detach().cpu()
@@ -350,4 +367,5 @@ class Trainer:
             self.logger.add_scalar("train/loss", loss, step)
             self.logger.add_scalar("train/width", width, step)
             self.logger.add_scalar("train/lr", lr, step)
+            self.logger.add_scalar("train/batch", batch_idx, step)
             pbar.set_postfix({"loss": loss.item(), "lr": f"{lr:.4e}"})
