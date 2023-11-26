@@ -25,7 +25,6 @@ from .augmentations import get_augmentation
 from .dataloaders import Sample, get_dataloader
 from .metrics import Avg, acc_full_sequence, acc_per_char
 from .models import CosineWWRD, CTCLoss, OCRModel
-# from .models.losses import HungarianCTCLoss
 from .tools import resize_image
 from .vocabs import Vocab, get_vocab
 
@@ -109,10 +108,10 @@ class Trainer:
         # | TODO: Model config |
         # +--------------------+
         backbone_config = {
-            "name": "fvtr_t",
+            "name": "tr_resnet18",
             "image_height": image_height,
         }
-        backbone_config = "tr_resnet18"
+        # backbone_config = "tr_resnet18"
         head_config = "linear"
 
         # +-----------+
@@ -137,9 +136,9 @@ class Trainer:
         n = int(max_steps / 10_000)
         self.optimizer = optim.SGD(
             self.model.parameters(),
-            momentum=1e-4,
             lr=lr,
-            weight_decay=1e-5,
+            weight_decay=1e-4,
+            momentum=0.9,
             nesterov=True,
         )
         self.lr_scheduler = CosineWWRD(

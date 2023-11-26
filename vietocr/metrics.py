@@ -4,6 +4,8 @@ from dataclasses import dataclass
 def acc_full_sequence(pr: str, gt: str) -> float:
     """Compute full-sequence accuracy, returns 1 if `pr` and `gt` equals, else 0.
 
+    # In case ground truth is empty, return 0.5, because empty labels are low-hanging fruit.
+
     Args:
         pr (str): prediction
         gt (str): ground truth
