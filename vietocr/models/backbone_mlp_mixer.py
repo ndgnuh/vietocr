@@ -138,7 +138,7 @@ class MiddleProjection(nn.Sequential):
         super().__init__()
         kwargs = dict(kernel_size=(3, 1), padding=(1, 0), stride=(2, 1))
         self.conv = nn.Conv2d(in_channels, out_channels, **kwargs)
-        self.to_vec = PermuteDim("bcwh", "bhwc")
+        self.to_vec = PermuteDim("bchw", "bwhc")
         self.norm = nn.LayerNorm(out_channels)
         self.to_img = PermuteDim("bwhc", "bchw")
 
@@ -147,15 +147,14 @@ class FinalProjection(nn.Module):
     def __init__(self, in_channels, out_channels, dropout: float = 0.1):
         super().__init__()
         self.output = nn.Sequential(
+            PermuteDim("bchw", "bwhc"),
+            nn.Flatten(1, 2),
             nn.Linear(in_channels, out_channels),
             nn.SELU(True),
             nn.Dropout(dropout),
         )
 
     def forward(self, x):
-        b, c, h, w = 0, 1, 2, 3
-        x = x.permute(b, w, h, c)
-        x = x.flatten(1, 2)
         x = self.output(x)
         return x
 
