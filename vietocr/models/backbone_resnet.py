@@ -72,10 +72,10 @@ class ResidualBlock(nn.Module):
                 padding=padding,
                 bias=False,
             ),
-            nn.GroupNorm(1, out_channels),
+            nn.InstanceNorm2d(out_channels),
             nn.ReLU(True),
             nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
-            nn.GroupNorm(1, out_channels),
+            nn.InstanceNorm2d(out_channels),
         )
 
         # +---------------------+
@@ -144,10 +144,10 @@ class Resnet(nn.Module):
         # +------------+
         self.stem = nn.Sequential(
             nn.Conv2d(3, channels[0], 3, 2, padding=1),
-            nn.GroupNorm(1, channels[0]),
+            nn.InstanceNorm2d(channels[0]),
             nn.ReLU(True),
             nn.Conv2d(channels[0], channels[0], (3, 1), (2, 1), padding=(1, 0)),
-            nn.GroupNorm(1, channels[0]),
+            nn.InstanceNorm2d(channels[0]),
         )
 
         # +---------------+
@@ -212,7 +212,7 @@ class TransformerBlock(nn.Module):
         self.norm_mlp = nn.LayerNorm(channels)
         self.mlp = nn.Sequential(
             nn.Linear(channels, channels * 4),
-            nn.GELU(),
+            nn.ReLU(True),
             nn.Linear(channels * 4, channels),
         )
 
@@ -259,7 +259,7 @@ class MixedResnetStage(nn.Module):
         else:
             self.project = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, (2, 1), (2, 1)),
-                nn.GroupNorm(1, out_channels),
+                nn.InstanceNorm2d(out_channels),
                 nn.ReLU(True),
             )
 
@@ -270,7 +270,7 @@ class MixedResnetStage(nn.Module):
 
 
 class MixedResnet(nn.Module):
-    def __init__(self, hidden_sizes: List[int], layers: List[List[type]]):
+    def __init__(self, hidden_sizes: List[int], layers: List[List[type]], **k):
         super().__init__()
         # All stages
         stages = []
@@ -280,7 +280,7 @@ class MixedResnet(nn.Module):
         # +------+
         stem = nn.Sequential(
             nn.Conv2d(3, hidden_sizes[0], (4, 2), stride=(4, 2)),
-            nn.GroupNorm(1, hidden_sizes[0]),
+            nn.InstanceNorm2d(hidden_sizes[0]),
             nn.ReLU(True),
         )
         stages.append(stem)
