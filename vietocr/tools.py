@@ -1,10 +1,53 @@
 """Helper modules"""
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 from typing import Tuple
 
 import cv2
 import numpy as np
 from PIL import Image
+
+
+def parse_model_string(model_string: str):
+    """Parse model string to get model related information.
+
+    Model string format:
+    ```
+    <backbone_name>-<head_name>-<vocab_type>-<language>-<max_width>x<height>[x(min_width)]
+    ```
+
+    Examples:
+        - `fvtr_t-linear-ctc-vi-512x32`
+        - `fvtr_t-rnn-ctc-vi-512x32`
+        - `resnet50-attention_rnn-s2s-vi-512x32x28`
+
+    #### Returns (Dictionary):
+        `weight_name` (str): Name of weight file.
+        `backbone_config` (str): backbone name,
+        `head_config` (str): prediction head name,
+        `vocab_type` (str): type of vocabulary (ctc or s2s),
+        `language` (str): which language to load vocab,
+        `max_image_width` (int): Maximum image width
+        `min_image_width` (int): Minimum image width, default is 0.75 image height
+        `image_height` (int): Image height
+    """
+    backbone, head, vocab_type, language, size = model_string.split("-")
+    sizes = [int(s) for s in size.split("x")]
+    if len(sizes) == 2:
+        max_width, height = sizes
+        min_width = int(height * 0.75)
+    else:
+        max_width, height, min_width = sizes
+    weight_name = f"{model_string}.pt"
+    return {
+        "weight_name": weight_name,
+        "backbone_config": backbone,
+        "head_config": head,
+        "vocab_type": vocab_type,
+        "language": language,
+        "max_image_width": max_width,
+        "min_image_width": min_width,
+        "image_height": height,
+    }
 
 
 def get_width_for_height(image_wh: Tuple[int, int], desired_height: int) -> int:
@@ -193,7 +236,9 @@ def create_letterbox_cv2(
     # +-----------------------+
     pads = [pad_y, pad_y, pad_x, pad_x]
     image = cv2.resize(image, new_size, cv2.INTER_LANCZOS4)
-    image = cv2.copyMakeBorder(image, *pads, borderType=cv2.BORDER_CONSTANT, value=fill_color)
+    image = cv2.copyMakeBorder(
+        image, *pads, borderType=cv2.BORDER_CONSTANT, value=fill_color
+    )
     return image
 
 
