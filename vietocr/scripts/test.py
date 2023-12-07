@@ -12,9 +12,7 @@ from ..loader.dataloader import (
 )
 
 
-def main(config, options):
-    batch_size = options.batch_size
-    annotation_path = options.test_annotation
+def main(config, batch_size: str, annotation_path: str):
 
     model, vocab = build_model(config)
     model.eval()
