@@ -193,6 +193,7 @@ class Trainer:
         # | Logging |
         # ===========
         self.logger = SummaryWriter(flush_secs=1)
+        self.bests = dict(acc_fs=0, acc_pc=0)
 
     @torch.no_grad()
     def run_validation(self, step=0):
@@ -288,6 +289,8 @@ class Trainer:
         # | Log to stdout |
         # +---------------+
         fmt_data = (loss_avg.get(), acc_fs.get(), acc_pc.get())
+        self.bests["acc_fs"] = max(fmt_data[1], self.bests["acc_fs"])
+        self.bests["acc_pc"] = max(fmt_data[2], self.bests["acc_pc"])
         fmt = "[Validation] loss: %.5e - Full sequence: %.4f - Per-char: %.4f"
         tqdm.write(fmt % fmt_data)
 
@@ -342,13 +345,13 @@ class Trainer:
                 scores, predicts = model.post_process(outputs)
                 predicts = predicts.detach().cpu()
                 targets = targets.detach().cpu()
-                tqdm.write("=" * 10 + f" STEP {step} " + "=" * 10)
+                best_fmt = ", ".join(f"{k}={v}" for k, v in self.bests.items())
+                tqdm.write(f"== step {step} == best: {best_fmt}")
                 for pr, gt in zip(predicts, targets):
                     pr = self.vocab.decode(pr.tolist())
                     gt = self.vocab.decode(gt.tolist())
-                    tqdm.write(f"PR: {pr}")
-                    tqdm.write(f"GT: {gt}")
-                    tqdm.write("=" * 10)
+                    tqdm.write(f"> PR: {pr}")
+                    tqdm.write(f"  GT: {gt}")
 
             # +---------------------+
             # | Run validation loop |
