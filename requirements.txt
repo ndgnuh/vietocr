@@ -24,7 +24,7 @@ tensorboardX
 # | Data processing |
 # +-----------------+
 numpy
-git+https://gitlab.com/ndgnuh/dsrecords.git
+dsrecords
 opencv-python-headless
 albumentations
 unidecode
