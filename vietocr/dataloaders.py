@@ -109,6 +109,8 @@ class OCRDataset(Dataset):
 
 class BucketRandomSampler(Sampler):
     def __init__(self, data_source: Dataset, batch_size: int, shuffle: bool = False):
+        super().__init__()
+
         # +-----------------------------------+
         # | Check for the bucket key function |
         # +-----------------------------------+
@@ -119,7 +121,6 @@ class BucketRandomSampler(Sampler):
         # +---------------+
         # | Store options |
         # +---------------+
-        super().__init__(data_source=data_source)
         self.shuffle = shuffle
         self.batch_size = batch_size
         self.cache_key = f"sampler_bucket_{data_source.hash()}"
