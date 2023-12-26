@@ -1,5 +1,6 @@
 import sys
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
+from vietocr.configs import Config
 
 actions = {}
 
@@ -21,6 +22,8 @@ def pretrain(args):
     help = "directory of fonts to be used when rendering training data"
     parser.add_argument("--fonts", help=help)
     args = parser.parse_args(args)
+
+    config = Config.from_yaml(args.config)
     raise RuntimeError("Not implemented")
 
 
@@ -41,14 +44,19 @@ def train(args):
     help = "Number of sub-processes to use (torch's num_workers)"
     parser.add_argument("--num-workers", "-p", type=int, default=0, help=help)
     args = parser.parse_args(args)
+
+    config = Config.from_yaml(args.config)
+    print(config)
     raise RuntimeError("Not implemented")
 
 
 def main():
-    parser = ArgumentParser(
-        description="Run `--help` with each intent for details.",
-    )
+    parser = ArgumentParser(description="Run `--help` with each intent for details.")
     parser.add_argument("intent", choices=list(actions))
+
+    # No-args
+    if len(sys.argv) < 2:
+        parser.parse_args()
 
     # No-intent
     intent = sys.argv[1]
