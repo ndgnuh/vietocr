@@ -1,0 +1,20 @@
+# change to list chars of your dataset or use default vietnamese chars
+vocab: 'aAàÀảẢãÃáÁạẠăĂằẰẳẲẵẴắẮặẶâÂầẦẩẨẫẪấẤậẬbBcCdDđĐeEèÈẻẺẽẼéÉẹẸêÊềỀểỂễỄếẾệỆfFgGhHiIìÌỉỈĩĨíÍịỊjJkKlLmMnNoOòÒỏỎõÕóÓọỌôÔồỒổỔỗỖốỐộỘơƠờỜởỞỡỠớỚợỢpPqQrRsStTuUùÙủỦũŨúÚụỤưƯừỪửỬữỮứỨựỰvVwWxXyYỳỲỷỶỹỸýÝỵỴzZ0123456789!"#$%&''()*+,-./:;<=>?@[\]^_`{|}~ '
+type: ctc
+
+# weights: https://github.com/ndgnuh/vietocr/releases/download/weights/fvtr_v2_t@vn.pth
+# weights: storage/weights/fvtr_v2_t@vn.pth
+# weights: storage/weights/best-9100.fvtr_v2_t@vn.pth
+
+backbone: fvtr_v3_t
+cnn:
+  output_size: 230
+  image_height: 32
+
+seq_modeling: none
+transformer: {}
+
+image_height: 32
+image_min_width: 40
+image_max_width: 540
+image_letterbox: false
