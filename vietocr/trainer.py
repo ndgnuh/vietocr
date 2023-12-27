@@ -172,17 +172,13 @@ class OcrTrainer:
             self.lr_scheduler = LrScheduler(self.optimizer, **lr_scheduler)
 
         # Logging
+        hparams = {
+            "num_training_batches": len(self.train_loader),
+            "num_validation_batches": len(self.val_loader),
+            "vocab_size": len(self.vocab),
+        }
         self.logger = SummaryWriter()
-        self.logger.add_hparams(
-            {
-                "num_training_batches": len(self.train_loader),
-                "num_validation_batches": len(self.val_loader),
-                "vocab_size": len(self.vocab),
-            },
-            {},
-            "information",
-            0,
-        )
+        self.logger.add_hparams(hparams, {})
 
     def fit(self):
         # Unpack

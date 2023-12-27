@@ -4,6 +4,7 @@ from typing import Callable, List, Optional, Union
 import numpy as np
 import torch
 from torch.utils.data import ConcatDataset, DataLoader
+from tqdm import tqdm
 
 # The __init__ is allowed to use code from outside
 from ..configs import OcrConfig
@@ -120,14 +121,22 @@ def build_dataloader(
     if isinstance(data_configs, (tuple, list)):
         datasets = [load_data(config, **data_options) for config in data_configs]
         datasets = ConcatDataset(datasets)
+        bare_datasets = [
+            load_data(config, vocab=data_options["vocab"]) for config in data_configs
+        ]
+        bare_datasets = ConcatDataset(bare_datasets)
     else:
         datasets = load_data(data_configs, **data_options)
+        bare_datasets = load_data(data_configs, vocab=data_options["vocab"])
 
     # Sample data with similar widths
-    # if shuffle:
-    #     sampler = SameSizeSampler(shuffle=shuffle)
-    # else:
-    #     sampler = SameSizeSampler(shuffle=shuffle)
+    widths = []
+    heights = []
+    for image, label in tqdm(bare_datasets, "Building sampler indices"):
+        H, W = image.shape[:2]
+        widths.append(W)
+        heights.append(H)
+    sampler = SameSizeSampler(widths, heights, batch_size=batch_size, shuffle=shuffle)
 
     # Build dataloader
     loader = DataLoader(
@@ -135,6 +144,6 @@ def build_dataloader(
         batch_size=batch_size,
         num_workers=num_workers,
         collate_fn=collate_variable_width,
-        shuffle=shuffle,
+        sampler=sampler,
     )
     return loader

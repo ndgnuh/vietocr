@@ -32,13 +32,13 @@ class SameSizeSampler(Sampler):
         self.shuffle = shuffle
         self.batch_size = batch_size
         self.buckets = defaultdict(list)
+        self.total_length = total_length = len(widths)
 
         # +----------------------+
         # | Build bucket indices |
         # +----------------------+
         widths = list(widths)
         heights = list(heights)
-        total_length = len(widths)
         pbar = enumerate(zip(widths, heights))
         pbar = tqdm(pbar, "Building buckets", total=total_length, leave=False)
         for i, (w, h) in pbar:
@@ -47,7 +47,7 @@ class SameSizeSampler(Sampler):
             self.buckets[key].append(i)
 
     def __len__(self):
-        return len(self.data_source)
+        return self.total_length
 
     def __iter__(self):
         batch_size = self.batch_size

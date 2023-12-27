@@ -1,5 +1,6 @@
 import random
 from abc import abstractmethod
+from functools import lru_cache
 from os import listdir, path
 from typing import Callable, List, Optional, Tuple, Union
 
@@ -22,7 +23,7 @@ class _OcrDataset(Dataset):
     def __init__(
         self,
         samples,
-        vocab,
+        vocab: Optional = None,
         preprocess: Optional[Callable] = None,
         augment: Optional[Callable] = None,
     ):
@@ -35,11 +36,15 @@ class _OcrDataset(Dataset):
     def get_raw(self, i):
         ...
 
+    @property
+    def encode(self):
+        return None if self.vocab is None else self.vocab.encode
+
     def __getitem__(self, i):
         image, label = self.get_raw(i)
         image = _call_me_maybe(self.augment, image, image=image)
         image = _call_me_maybe(self.preprocess, image, image)
-        label = _call_me_maybe(self.vocab.encode, label, label)
+        label = _call_me_maybe(self.encode, label, label)
         return image, label
 
 
@@ -142,6 +147,7 @@ class PretrainOcrDataset(_OcrDataset):
         self.fonts = fonts
         samples = [False] * n
         super().__init__(samples, **kwargs)
+        self.get_raw = lru_cache(maxsize=n)(self.get_raw)
 
     def _sample_fonts(self) -> ImageFont.ImageFont:
         fonts = self.fonts
