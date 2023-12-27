@@ -135,14 +135,14 @@ class OcrTrainer:
         )
         train_loader = build_dataloader(
             config.train_data,
-            encode=vocab.encode,
             preprocess=preprocess,
             augment=augment,
+            vocab=vocab,
             **config.dataloader_options,
         )
         val_loader = build_dataloader(
             config.val_data,
-            encode=vocab.encode,
+            vocab=vocab,
             preprocess=preprocess,
             augment=None,
             **config.dataloader_options,
@@ -173,6 +173,16 @@ class OcrTrainer:
 
         # Logging
         self.logger = SummaryWriter()
+        self.logger.add_hparams(
+            {
+                "num_training_batches": len(self.train_loader),
+                "num_validation_batches": len(self.val_loader),
+                "vocab_size": len(self.vocab),
+            },
+            {},
+            "information",
+            0,
+        )
 
     def fit(self):
         # Unpack
@@ -200,6 +210,7 @@ class OcrTrainer:
         data_iter = tqdm(data_iter, total=total_steps)
         tqdm.write(f"Number of training batches {len(train_loader)}")
         tqdm.write(f"Number of validation batches {len(val_loader)}")
+        tqdm.write(f"Vocabulary size {len(vocab)}")
 
         # Start training loop
         for step, epoch, batch in data_iter:
@@ -213,6 +224,7 @@ class OcrTrainer:
             if step % print_every == 0:
                 self.logger.add_scalar("loss/train-avg", train_loss, step)
                 train_losses.reset()
+                torch.save(model.state_dict(), "model.pt")
 
             # Validate and log results
             if step % validate_every == 0:
@@ -226,8 +238,8 @@ class OcrTrainer:
                     predictions.extend(metrics["predictions"])
 
                 # Only write out 5 examples max
-                num_samples = min(len(metrics["predictions"]), 5)
-                samples = random.choices(metrics["predictions"], k=num_samples)
+                num_samples = min(len(predictions), 5)
+                samples = random.choices(predictions, k=num_samples)
 
                 # Logging
                 tqdm.write(pformat(samples))
@@ -238,7 +250,9 @@ class OcrTrainer:
 
             # More logging
             lr = lr_scheduler.get_last_lr()[0]
+            image_width = batch[0].shape[-1]
             log_dict = dict(loss=loss, lr=lr)
             data_iter.set_description(f"Train #{step}/{total_steps}")
             data_iter.set_postfix(log_dict)
             self.logger.add_scalar("other/lr", lr, step)
+            self.logger.add_scalar("other/image-width", image_width, step)

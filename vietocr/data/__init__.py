@@ -1,3 +1,4 @@
+from copy import copy
 from typing import Callable, List, Optional, Union
 
 import numpy as np
@@ -7,8 +8,22 @@ from torch.utils.data import ConcatDataset, DataLoader
 # The __init__ is allowed to use code from outside
 from ..configs import OcrConfig
 from ..images import create_letterbox_cv2
-from .dataset_dsrecord import DsrecordOcrDataset, VietocrOcrDataset
+from .dataset_dsrecord import (DsrecordOcrDataset, PretrainOcrDataset,
+                               VietocrOcrDataset)
 from .samplers import SameSizeSampler
+
+dataset_types = {}
+
+
+def add_dataset_type(key, Class):
+    """Register a new type of datasets"""
+    dataset_types[key] = Class
+    return Class
+
+
+add_dataset_type("dsrecord", DsrecordOcrDataset)
+add_dataset_type("vietocr", VietocrOcrDataset)
+add_dataset_type("pretrain", PretrainOcrDataset)
 
 
 def load_data(data_path: str, **kwargs):
@@ -27,9 +42,10 @@ def load_data(data_path: str, **kwargs):
             return VietocrOcrDataset(data_path, **kwargs)
         else:
             raise ValueError("Dataset not implemented")
-    if data_path == "pretrain":
-        return
     else:
+        data_config = copy(data_path)
+        Dataset = dataset_types[data_config.pop("type")]
+        return Dataset(**data_config, **kwargs)
         raise ValueError(f"Unsupported dataset {data_path}")
 
 
@@ -101,11 +117,11 @@ def build_dataloader(
     **data_options,
 ):
     # Load dataset(s)
-    if isinstance(data_configs, str):
-        datasets = load_data(data_configs, **data_options)
-    else:
+    if isinstance(data_configs, (tuple, list)):
         datasets = [load_data(config, **data_options) for config in data_configs]
         datasets = ConcatDataset(datasets)
+    else:
+        datasets = load_data(data_configs, **data_options)
 
     # Sample data with similar widths
     # if shuffle:
