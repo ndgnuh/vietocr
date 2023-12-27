@@ -1,5 +1,6 @@
 import random
 from copy import copy
+from os import makedirs, path
 from pprint import pformat
 from typing import Dict, Optional
 
@@ -119,8 +120,14 @@ class OcrTrainer:
             image_min_width=config.image_min_width,
             image_max_width=config.image_max_width,
         )
+        try:  # Try to load weights, if not notify and ignore
+            weights = torch.load(config.weights, map_location="cpu")
+            model.load_state_dict(weights)
+        except Exception as e:
+            tqdm.write(f"Can't load weights, error: {e}")
         self.vocab = vocab
         self.model = model
+        self.save_weights_path = config.save_weights
 
         # +------------------------+
         # | Initialize dataloaders |
@@ -180,6 +187,27 @@ class OcrTrainer:
         self.logger = SummaryWriter()
         self.logger.add_hparams(hparams, {})
 
+        # Load checkpoints if available
+        # TODO: load_checkpoint
+        # TODO: save_checkpoint
+
+    def save_weights(self):
+        if self.save_weights_path is None:
+            return
+        weights = self.model.state_dict()
+
+        # Check for NaN values
+        for k, v in weights.items():
+            if v.isnan().any():
+                tqdm.write("There is NaN value in weights, won't save")
+                return
+
+        # Store weights
+        weight_dir = path.dirname(self.save_weights_path)
+        makedirs(weight_dir, exist_ok=True)
+        torch.save(weights, self.save_weights_path)
+        tqdm.write(f"Model weights saved to {self.save_weights_path}")
+
     def fit(self):
         # Unpack
         optimizer = self.optimizer
@@ -220,7 +248,7 @@ class OcrTrainer:
             if step % print_every == 0:
                 self.logger.add_scalar("loss/train-avg", train_loss, step)
                 train_losses.reset()
-                torch.save(model.state_dict(), "model.pt")
+                self.save_weights()
 
             # Validate and log results
             if step % validate_every == 0:
@@ -252,3 +280,6 @@ class OcrTrainer:
             data_iter.set_postfix(log_dict)
             self.logger.add_scalar("other/lr", lr, step)
             self.logger.add_scalar("other/image-width", image_width, step)
+
+        # Save weights for the final time
+        self.save_weights()

@@ -11,8 +11,12 @@ class OcrConfig:
     backbone: Union[str, Dict]
     head: Union[str, Dict]
 
-    # Load weights
+    # Weights saving, loading, checkpoint is for trainer
     weights: Optional[str] = None
+    checkpoints: Optional[str] = None
+    save_weights: Optional[str] = None
+    save_checkpoints: Optional[str] = None
+    save_onnx: Optional[str] = None
 
     # Input specs
     image_height: int = 32
