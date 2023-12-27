@@ -9,6 +9,14 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 
+class LayerNorm2d(nn.LayerNorm):
+    def forward(self, x):
+        x = x.transpose(1, -1)
+        x = super().forward(self, x)
+        x = x.transpose(1, -1)
+        return x
+
+
 class ToFiber(nn.Module):
     @cached_property
     def permutation(self):
@@ -172,17 +180,21 @@ class FVTREmbedding(nn.Module):
                 kernel_size=(5, 3),
                 stride=(4, 2),
             ),
-            nn.SELU(True),
+            nn.ReLU(True),
         )
         with torch.no_grad():
             img = torch.rand(1, 3, image_height, 128)
             num_hpatch = self.patch_embedding(img).shape[-2]
 
         self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
+        # self.position_embedding = nn.Parameter(
+        #     torch.rand(1, hidden_size, num_hpatch, 1024)
+        # )
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
+        W = embeddings.shape[-1]
         embeddings = self.position_encodings(embeddings) + embeddings
         embeddings = self.dropout(embeddings)
         return embeddings
@@ -199,11 +211,18 @@ class CombiningBlock(nn.Module):
         super().__init__()
         self.output = nn.Sequential(
             nn.Linear(input_size, output_size),
-            nn.GELU(),
+            nn.ReLU(True),
         )
+
+    @staticmethod
+    def cross_pool(x):
+        v, _ = x.max(dim=-2, keepdim=True)
+        h, _ = x.max(dim=-1, keepdim=True)
+        return v + h
 
     def forward(self, x: Tensor):
         # b c h w -> b c w h -> b c wh -> b wh c
+        x = x * self.cross_pool(x)
         x = x.transpose(-2, -1)
         x = x.flatten(2)
         x = x.transpose(-2, -1)
@@ -252,8 +271,9 @@ class MixerBlock(nn.Module):
         self.mixer_dropout = nn.Dropout(attn_dropout)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
-            nn.GELU(),
+            nn.ReLU(True),
             nn.Linear(hidden_size * 4, hidden_size),
+            nn.Dropout(dropout),
         )
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
@@ -269,10 +289,10 @@ class MixerBlock(nn.Module):
         return self.mixer_dropout(x)
 
     def forward(self, patches, mask):
-        patches = self.norm_mixer(patches)
         patches = self.forward_sa(patches, mask) + patches
-        patches = self.norm_mlp(patches)
+        patches = self.norm_mixer(patches)
         patches = self.mlp(patches) + patches
+        patches = self.norm_mlp(patches)
         return patches
 
 
@@ -342,6 +362,7 @@ class FVTR(nn.Sequential):
         num_attention_heads: List[int],
         image_height: int,
         locality: Tuple[int, int] = (7, 11),
+        **unused_kwargs,
     ):
         super().__init__()
         self.locality = locality

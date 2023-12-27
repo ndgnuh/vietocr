@@ -40,18 +40,36 @@ def _initialize(namespace: Dict, config: Union[Dict, str], **extra_kwargs):
         return namespace[config](**extra_kwargs)
 
 
-class OCRModel(nn.Module):
+class OcrModel(nn.Module):
+    """Entrypoint for the initializing OcrModel."""
+
     def __init__(
         self,
         vocab_size: int,
-        backbone_config: Union[Dict, str],
-        head_config: Union[Dict, str],
+        backbone: Union[Dict, str],
+        head: Union[Dict, str],
+        image_height: int,
+        image_min_width: int,
+        image_max_width: int,
+        model_type: str = "ctc",
     ):
         super().__init__()
+        backbone_config = backbone
+        head_config = head
+
         # Initialize backbone
         # All backbone must have `get_hidden_size` method
-        self.backbone = _initialize(BACKBONES, backbone_config)
-        hidden_size = self.backbone.get_hidden_size()
+        self.backbone = _initialize(
+            BACKBONES,
+            backbone_config,
+            image_height=image_height,
+            image_min_width=image_min_width,
+            image_max_width=image_max_width,
+        )
+        with torch.no_grad():
+            image = torch.rand(1, 3, 32, 128)
+            hidden_size = self.backbone(image).shape[-1]
+            del image
 
         # Prediction head
         # All prediction head must accept `vocab_size` and `hidden_size` kwargs
@@ -61,6 +79,7 @@ class OCRModel(nn.Module):
             vocab_size=vocab_size,
             hidden_size=hidden_size,
         )
+        self.compute_loss = CTCLoss() if model_type == "ctc" else CrossEntropyLoss()
 
         # Store stuffs
         self.backbone_config = backbone_config

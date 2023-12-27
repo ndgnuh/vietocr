@@ -19,10 +19,22 @@ from .tools import create_letterbox_cv2, create_letterbox_pil, resize_image
 
 
 class disk_cache:
+    """
+    This is just a namespace for caching bucket indices.
+
+    :method save_cache: Save cache
+    :method load_cache: Load cache
+    """
+
     cache_dir = ".cache"
 
     @classmethod
     def save_cache(cls, key, data):
+        """Save data to cache storage
+
+        :param str key: Cache key.
+        :param object data: Python object that can be pickled.
+        """
         cls.ensure_cache_dir()
         cache_path = cls.cache_path(key)
         with open(cache_path, "wb+") as f:
@@ -39,6 +51,11 @@ class disk_cache:
 
     @classmethod
     def load_cache(cls, key):
+        """Load cache from some keys
+
+        :param str key: The cache key
+        :return: cached object, if available, otherwise return None
+        """
         cache_path = cls.cache_path(key)
         if not path.exists(cache_path):
             return None
@@ -71,6 +88,14 @@ def split_annotation(line: str, delim: str = "\t") -> Tuple[str, str]:
 
 
 class OCRDataset(Dataset):
+    """Data set for character transcription, sometime also known as text recognition or OCR
+
+    :param str annotation_path: Path to annotation, annotation file must be a text file.
+    :param transform: Transform function to encode or augment the data. Default `None`.
+    :type transform: `Optional[Callable]`
+    :param str delim: Annotation delimeter, default is comma (the '`,`' character).
+    """
+
     def __init__(
         self,
         annotation_path: str,
@@ -108,6 +133,18 @@ class OCRDataset(Dataset):
 
 
 class BucketRandomSampler(Sampler):
+    """Sampler that put items with similar keys in the same bucket. Data source
+    is required to build the bucket at initialization. It may takes a while for
+    large datasets.
+
+    :param data_source: A `torch`'s dataset.
+    :type data_source: :py:class:`torch.utils.data.Dataset`
+    :param int batch_size: The batch size, this is used for shuffling.
+    :param bool shuffle: Should the data be shuffled. If `True`, the data will be sorted
+        by their bucket keys first. Items with the same bucket key will be randomly ordered.
+        After that, the batches will be shuffled.
+    """
+
     def __init__(self, data_source: Dataset, batch_size: int, shuffle: bool = False):
         super().__init__()
 
@@ -190,6 +227,16 @@ class BucketRandomSampler(Sampler):
 
 
 def collate_variable_width(samples: List[Sample], pad_token_id: int = 0):
+    """Collate function for variable image widths.
+
+    It performs letterbox on the smaller images so that all of them are equal widths.
+    Then, the images can be stacked together. After that, the labels are padded to some
+    maximum length, the label sizes are stored for the loss calculation.
+
+    :arg samples: list of data samples, see also :py:class:`.Sample`.
+    :type samples: `List[Sample]`
+    :arg int pad_token_id: the value for pad token, default: `0`.
+    """
     pad_id = pad_token_id
 
     # +----------------------+

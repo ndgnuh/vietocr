@@ -1,0 +1,244 @@
+import random
+from copy import copy
+from pprint import pformat
+from typing import Dict, Optional
+
+import torch
+from lightning_fabric import Fabric
+from tensorboardX import SummaryWriter
+from torch import nn, optim
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+from .configs import OcrConfig
+from .data import build_dataloader
+from .images import prepare_input
+from .metrics import acc_full_sequence, acc_per_char
+from .models import OcrModel
+from .vocabs import get_vocab
+
+
+class _StatList(list):
+    def mean(self):
+        return sum(self) / len(self)
+
+    def reset(self):
+        while len(self) > 0:
+            self.pop(0)
+
+
+def mean(lst):
+    return sum(lst) / len(lst)
+
+
+def loop_for_steps(loader: DataLoader, total_steps: int):
+    """It's easier to control the training this way.
+
+    Yields:
+        step (int): The current training step
+        epoch (int): The current training epoch
+        batch: The data batch of samples
+    """
+    step = 1
+    epoch = 0
+    while step < total_steps:
+        for i, data in enumerate(loader):
+            yield step, epoch, data
+            step = step + 1
+            if step > total_steps:
+                return
+        epoch = epoch + 1
+
+
+def _train_step(model: OcrModel, batch, optimizer, lr_scheduler) -> float:
+    image, targets, target_lengths = batch
+
+    # Forward
+    optimizer.zero_grad()
+    outputs = model(image)
+
+    # Backward
+    loss = model.compute_loss(outputs, targets, target_lengths)
+    loss.backward()
+
+    # Scheduling LR
+    optimizer.step()
+    lr_scheduler.step()
+    return loss.item()
+
+
+@torch.no_grad()
+def _validate_step(model: OcrModel, batch, vocab) -> float:
+    image, targets, target_lengths = batch
+    outputs = model(image)
+    loss = model.compute_loss(outputs, targets, target_lengths)
+
+    # Decode and compute scores
+    pr_probits = torch.softmax(outputs, dim=-1)
+    batch_pr = pr_probits.argmax(dim=-1)
+    batch_gt = targets
+    acc_fs, acc_pc, predictions = [], [], []
+    for pr, gt in zip(batch_pr, batch_gt):
+        pr_s = vocab.decode(pr.cpu().numpy())
+        gt_s = vocab.decode(gt.cpu().numpy())
+        acc_fs.append(acc_full_sequence(pr_s, gt_s))
+        acc_pc.append(acc_per_char(pr_s, gt_s))
+        predictions.append({"pr": pr_s, "gt": gt_s})
+    return dict(loss=loss.item(), acc_fs=acc_fs, acc_pc=acc_pc, predictions=predictions)
+
+
+class OcrTrainer:
+    """Trainer for OcrModel.
+
+    Args:
+        config (OcrConfig): The configuration
+        name (Optional[str]): The experiement name, will be used for
+            logging directory.
+    """
+
+    def __init__(self, config: OcrConfig, name: str = None):
+        # +---------------------+
+        # | Training scheduling |
+        # +---------------------+
+        self.print_every = config.print_every
+        self.validate_every = config.validate_every
+        self.total_steps = config.total_steps
+        if self.print_every is None:
+            self.print_every = max(1, self.validate_every // 5)
+
+        # +------------------------------+
+        # | Initialize model and encoder |
+        # +------------------------------+
+        vocab = get_vocab(config.vocab, config.type)
+        vocab_size = len(vocab)
+        model = OcrModel(
+            vocab_size,
+            backbone=config.backbone,
+            head=config.head,
+            image_height=config.image_height,
+            image_min_width=config.image_min_width,
+            image_max_width=config.image_max_width,
+        )
+        self.vocab = vocab
+        self.model = model
+
+        # +------------------------+
+        # | Initialize dataloaders |
+        # +------------------------+
+        augment = None
+        preprocess = prepare_input(
+            min_width=config.image_min_width,
+            max_width=config.image_max_width,
+            height=config.image_height,
+            normalize=False,  # Collate fn will normalize the image
+            transpose=False,  # Collate fn will transposes the image
+        )
+        train_loader = build_dataloader(
+            config.train_data,
+            encode=vocab.encode,
+            preprocess=preprocess,
+            augment=augment,
+            **config.dataloader_options,
+        )
+        val_loader = build_dataloader(
+            config.val_data,
+            encode=vocab.encode,
+            preprocess=preprocess,
+            augment=None,
+            **config.dataloader_options,
+        )
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+
+        # +----------------------+
+        # | Initialize optimizer |
+        # +----------------------+
+        optimizer = copy(config.optimizer)
+        optimizer["lr"] = float(optimizer["lr"])
+        optimizer["weight_decay"] = float(optimizer["weight_decay"])
+        optimizer_type = optimizer.pop("type")
+        Optimizer = getattr(optim, optimizer_type)
+        self.optimizer = Optimizer(self.model.parameters(), **optimizer)
+
+        # +----------------------------+
+        # | Lr scheduler, if available |
+        # +----------------------------+
+        if config.lr_scheduler is None:
+            self.lr_scheduler = optim.lr_scheduler.ConstantLR(optimizer, factor=1)
+        else:
+            lr_scheduler = copy(config.lr_scheduler)
+            lr_scheduler_type = lr_scheduler.pop("type")
+            LrScheduler = getattr(optim.lr_scheduler, lr_scheduler_type)
+            self.lr_scheduler = LrScheduler(self.optimizer, **lr_scheduler)
+
+        # Logging
+        self.logger = SummaryWriter()
+
+    def fit(self):
+        # Unpack
+        optimizer = self.optimizer
+        lr_scheduler = self.lr_scheduler
+        model = self.model
+        vocab = self.vocab
+
+        # Scheduling
+        total_steps = self.total_steps
+        print_every = self.print_every
+        validate_every = self.validate_every
+
+        # Setup models
+        fabric = Fabric()
+        model, optimizer = fabric.setup(model, optimizer)
+        loaders = fabric.setup_dataloaders(self.train_loader, self.val_loader)
+        train_loader, val_loader = loaders
+
+        # Stats
+        train_losses = _StatList()
+
+        # Data looping
+        data_iter = loop_for_steps(train_loader, total_steps)
+        data_iter = tqdm(data_iter, total=total_steps)
+        tqdm.write(f"Number of training batches {len(train_loader)}")
+        tqdm.write(f"Number of validation batches {len(val_loader)}")
+
+        # Start training loop
+        for step, epoch, batch in data_iter:
+            # Training step and logging
+            loss = _train_step(model, batch, optimizer, lr_scheduler)
+            self.logger.add_scalar("loss/train", loss, step)
+
+            # Average logging
+            train_losses.append(loss)
+            train_loss = train_losses.mean()
+            if step % print_every == 0:
+                self.logger.add_scalar("loss/train-avg", train_loss, step)
+                train_losses.reset()
+
+            # Validate and log results
+            if step % validate_every == 0:
+                # Collect metrics
+                val_losses, acc_fs, acc_pc, predictions = [], [], [], []
+                for batch in tqdm(val_loader, "Validation"):
+                    metrics = _validate_step(model, batch, vocab=vocab)
+                    val_losses.append(metrics["loss"])
+                    acc_fs.extend(metrics["acc_fs"])
+                    acc_pc.extend(metrics["acc_pc"])
+                    predictions.extend(metrics["predictions"])
+
+                # Only write out 5 examples max
+                num_samples = min(len(metrics["predictions"]), 5)
+                samples = random.choices(metrics["predictions"], k=num_samples)
+
+                # Logging
+                tqdm.write(pformat(samples))
+                self.logger.add_scalar("loss/val-avg", mean(val_losses), step)
+                self.logger.add_scalar("other/acc-fs", mean(acc_fs), step)
+                self.logger.add_scalar("other/acc-pc", mean(acc_pc), step)
+                self.logger.add_scalar("loss/train-avg", train_loss, step)
+
+            # More logging
+            lr = lr_scheduler.get_last_lr()[0]
+            log_dict = dict(loss=loss, lr=lr)
+            data_iter.set_description(f"Train #{step}/{total_steps}")
+            data_iter.set_postfix(log_dict)
+            self.logger.add_scalar("other/lr", lr, step)

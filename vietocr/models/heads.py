@@ -6,4 +6,4 @@ class LinearHead(nn.Linear):
         super().__init__(hidden_size, vocab_size, bias)
 
 
-MODULES = {"linear": LinearHead}
+MODULES = {"linear": LinearHead, "fc": LinearHead}

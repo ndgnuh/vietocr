@@ -1,13 +1,32 @@
 import sys
 from argparse import ArgumentParser
-from vietocr.configs import Config
 
 actions = {}
 
 
 def add_action(f):
+    if isinstance(f, str):
+
+        def wrap(g):
+            actions[f] = g
+            return g
+
+        return wrap
     actions[f.__name__] = f
     return f
+
+
+@add_action("list")
+def show(args):
+    pass
+
+
+@add_action
+def proto(args):
+    import yaml
+
+    with open("./conf.yaml") as f:
+        print(yaml.load(f, Loader=yaml.FullLoader))
 
 
 @add_action
@@ -23,7 +42,9 @@ def pretrain(args):
     parser.add_argument("--fonts", help=help)
     args = parser.parse_args(args)
 
-    config = Config.from_yaml(args.config)
+    from vietocr.configs import OcrConfig
+
+    config = OcrConfig.from_yaml(args.config)
     raise RuntimeError("Not implemented")
 
 
@@ -45,9 +66,16 @@ def train(args):
     parser.add_argument("--num-workers", "-p", type=int, default=0, help=help)
     args = parser.parse_args(args)
 
-    config = Config.from_yaml(args.config)
-    print(config)
-    raise RuntimeError("Not implemented")
+    from vietocr.configs import OcrConfig
+    from vietocr.trainer import OcrTrainer
+
+    # Load and modify configs if needed
+    config = OcrConfig.from_yaml(args.config)
+    config.num_workers = args.num_workers
+
+    # Training
+    trainer = OcrTrainer(config)
+    trainer.fit()
 
 
 def main():

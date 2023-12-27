@@ -4,9 +4,9 @@ from typing import Dict, List, Optional, Union
 
 
 @dataclass
-class Config:
+class OcrConfig:
     # Modelling specs
-    lang: str
+    vocab: str
     type: str
     backbone: Union[str, Dict]
     head: Union[str, Dict]
@@ -27,14 +27,36 @@ class Config:
     # Training and validation data
     train_data: List = field(default_factory=list)
     val_data: List = field(default_factory=list)
+    batch_size: int = 1
+    num_workers: int = 0
+    shuffle: bool = False
+
+    # Trainin schedulings
+    total_steps: int = 100_000
+    validate_every: int = 4000
+    print_every: Optional[int] = None
+
+    def __post_init__(self):
+        # Convert because floats with scientific syntax stuck as strings
+        self.lr = float(self.lr)
 
     @classmethod
     def from_yaml(Config, file: str):
+        """Load a config from yaml file."""
         import yaml
 
         with open(file, encoding="utf-8") as f:
             config = yaml.load(f, Loader=yaml.FullLoader)
         return Config(**config)
+
+    @property
+    def dataloader_options(self):
+        """Keyword arguments for torch's DataLoader."""
+        return dict(
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=self.shuffle,
+        )
 
 
 def initialize(namespace, config, attr=True, **extra_options):

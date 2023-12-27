@@ -13,9 +13,8 @@ class CTCLoss(nn.Module):
     # Reference:
     # https://pytorch.org/docs/stable/generated/torch.nn.CTCLoss.html#torch.nn.CTCLoss
 
-    def __init__(self, vocab, *a, **k):
+    def __init__(self, *a, **k):
         super().__init__()
-        k.setdefault("blank", vocab.blank_id)
         k.setdefault("zero_infinity", True)
         self.ctc = nn.CTCLoss(*a, **k)
         self.log_softmax = nn.LogSoftmax(dim=-1)
@@ -46,10 +45,10 @@ class CTCLoss(nn.Module):
 
 
 class CrossEntropyLoss(nn.Module):
-    def __init__(self, vocab, *a, **k):
+    def __init__(self, *a, **k):
         super().__init__()
         k.setdefault("label_smoothing", 0.1)
-        k.setdefault("ignore_index", vocab.pad_id)
+        k.setdefault("ignore_index", 0)
         self.loss = nn.CrossEntropyLoss(*a, **k)
 
     def forward(self, outputs, targets, target_lengths):
