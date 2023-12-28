@@ -98,6 +98,9 @@ class OcrTrainer:
     """
 
     def __init__(self, config: OcrConfig, name: str = None):
+        # Training specific validations
+        self.validate_config(config)
+
         # +---------------------+
         # | Training scheduling |
         # +---------------------+
@@ -123,6 +126,7 @@ class OcrTrainer:
         try:  # Try to load weights, if not notify and ignore
             weights = torch.load(config.weights, map_location="cpu")
             model.load_state_dict(weights)
+            tqdm.write(f"Loaded weights from {config.weights}")
         except Exception as e:
             tqdm.write(f"Can't load weights, error: {e}")
         self.vocab = vocab
@@ -283,3 +287,29 @@ class OcrTrainer:
 
         # Save weights for the final time
         self.save_weights()
+
+    def validate_config(self, config: OcrConfig):
+        """Validate the configuration specifically for training purpose.
+
+        The conditions are:
+        - The path to save weights is not empty,
+        - If the load weights path is specified, it must be an existing file.
+        - The list of training datasets is not empty (if it is specified as
+            a list in the configuration), or the training data is not None.
+
+        Notes: update the docs when adding conditions
+
+        Args:
+            config (OcrConfig): The model configuration.
+        """
+        msg = "Path to save weights is empty, training is meaning less"
+        assert config.save_weights is not None, msg
+
+        msg = f"The weights {config.weights} does not exists"
+        assert config.weights is None or path.isfile(config.weights)
+
+        msg = "No training data, please check the configuration"
+        if isinstance(config.train_data, list):
+            assert len(config.train_data) > 0, msg
+        else:
+            assert config.train_data is not None
