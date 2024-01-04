@@ -12,6 +12,7 @@ pages:
     variables:
       - $CI_COMMIT_MESSAGE =~ /\[doc\]/ || $CI_COMMIT_MESSAGE =~ /\[docs\]/
   script:
+    - apt-get update && apt-get install make
     - pip install sphinx
     - make html
   artifacts:
