@@ -114,15 +114,25 @@ class MultiheadSelfAttention(nn.Module):
         K = head["K"](x)
         V = head["V"](x)
         energy = Q.matmul(K.transpose(2, 1))
+        energy = energy - attn_mask
         energy = torch.softmax(energy / self.temperature, dim=-1)
-        if attn_mask is not None:
-            energy = (~attn_mask) * energy
         out = energy.matmul(V)
         return out
 
     def forward(self, x, attn_mask=None):
+        # Generate a softmax mask if attention mask is not None
+        # otherwise create a no-op mask
+        if attn_mask is not None:
+            zeros = torch.zeros_like(attn_mask)
+            softmax_mask = torch.where(attn_mask, torch.inf, zeros)
+        else:
+            softmax_mask = 0
+
+        # Split and forward each attention head
         xs = torch.split(x, self.head_dims, dim=-1)
-        xs = [self.forward_head(i, x, attn_mask) for i, x in enumerate(xs)]
+        xs = [self.forward_head(i, x, softmax_mask) for i, x in enumerate(xs)]
+
+        # Concat heads and output
         out = torch.cat(xs, dim=-1)
         out = self.output(out)
         return out
@@ -173,13 +183,12 @@ class FVTREmbedding(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
+        conv_1 = dict(kernel_size=(3, 1), stride=(2, 1))
+        conv_2 = dict(kernel_size=(3, 3), stride=(2, 2))
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(
-                image_channel,
-                hidden_size,
-                kernel_size=(5, 3),
-                stride=(4, 2),
-            ),
+            nn.Conv2d(image_channel, hidden_size, **conv_1),
+            nn.ReLU(True),
+            nn.Conv2d(hidden_size, hidden_size, **conv_2),
             nn.ReLU(True),
         )
         with torch.no_grad():
@@ -194,7 +203,6 @@ class FVTREmbedding(nn.Module):
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
-        W = embeddings.shape[-1]
         embeddings = self.position_encodings(embeddings) + embeddings
         embeddings = self.dropout(embeddings)
         return embeddings
