@@ -1,5 +1,5 @@
 from copy import copy
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Union
 
 
@@ -61,6 +61,9 @@ class OcrConfig:
             num_workers=self.num_workers,
             shuffle=self.shuffle,
         )
+
+    def to_dict(self):
+        return asdict(self)
 
 
 def initialize(namespace, config, attr=True, **extra_options):

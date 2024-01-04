@@ -30,6 +30,28 @@ def proto(args):
 
 
 @add_action
+def mkconfig(args):
+    parser = ArgumentParser()
+    help = "Output config file"
+    parser.add_argument("--output", "-o", required=True, help=help)
+    args = parser.parse_args(args)
+
+    # Import packages
+    import yaml
+
+    from vietocr.configs import OcrConfig
+
+    config = OcrConfig(
+        vocab="vietnamese",
+        type="ctc",
+        backbone="fvtr",
+        head="fc",
+    ).to_dict()
+    with open(args.output, "w") as f:
+        yaml.dump(config, f, sort_keys=False)
+
+
+@add_action
 def pretrain(args):
     parser = ArgumentParser()
     help = "path to model configuration file"
