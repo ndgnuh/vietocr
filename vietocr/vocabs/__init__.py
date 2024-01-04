@@ -60,8 +60,7 @@ def get_vocab(lang: str, vocab_type: str = "ctc") -> Vocab:
 
     Args:
         lang (str): The language preset name.
-        vocab_type (str): Either "ctc" for CTC vocab or
-            "s2s" for Sequence-to-sequence vocab.
+        vocab_type (str): Either "ctc" for CTC vocab or "s2s" for Sequence-to-sequence vocab.
 
     Returns:
         A :class:`.Vocab` object with the specified type and character set.

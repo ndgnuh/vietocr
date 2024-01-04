@@ -218,7 +218,7 @@ class Vocab(ABC):
     def decode(self, seq: List[int]) -> str:
         """Convert a list of character ids to a string.
 
-        The sub-classes in :class:`Vocab` need to implement
+        The sub-classes of :class:`Vocab` need to implement
         this method themselves.
 
         Args:
@@ -233,7 +233,7 @@ class Vocab(ABC):
     def encode(self, seq: str, max_length: Optional[int] = None) -> List[int]:
         """Convert a string to a list of supported character indices.
 
-        The sub-classes in :class:`Vocab` need to implement
+        The sub-classes of :class:`Vocab` need to implement
         this method themselves.
 
         Args:
