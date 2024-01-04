@@ -7,8 +7,9 @@ from typing import Dict, Optional
 import torch
 from lightning_fabric import Fabric
 from tensorboardX import SummaryWriter
-from torch import nn, optim
+from torch import optim
 from torch.utils.data import DataLoader
+from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from .configs import OcrConfig
@@ -165,8 +166,6 @@ class OcrTrainer:
         # | Initialize optimizer |
         # +----------------------+
         optimizer = copy(config.optimizer)
-        optimizer["lr"] = float(optimizer["lr"])
-        optimizer["weight_decay"] = float(optimizer["weight_decay"])
         optimizer_type = optimizer.pop("type")
         Optimizer = getattr(optim, optimizer_type)
         self.optimizer = Optimizer(self.model.parameters(), **optimizer)
@@ -208,7 +207,8 @@ class OcrTrainer:
 
         # Store weights
         weight_dir = path.dirname(self.save_weights_path)
-        makedirs(weight_dir, exist_ok=True)
+        if weight_dir != "":
+            makedirs(weight_dir, exist_ok=True)
         torch.save(weights, self.save_weights_path)
         tqdm.write(f"Model weights saved to {self.save_weights_path}")
 
@@ -250,7 +250,9 @@ class OcrTrainer:
             train_losses.append(loss)
             train_loss = train_losses.mean()
             if step % print_every == 0:
+                images = batch[0].cpu()
                 self.logger.add_scalar("loss/train-avg", train_loss, step)
+                self.logger.add_image("sample/inputs", make_grid(images, 2), 0)
                 train_losses.reset()
                 self.save_weights()
 
