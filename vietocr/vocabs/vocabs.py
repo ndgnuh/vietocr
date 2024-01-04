@@ -1,6 +1,7 @@
+"""Vocabulary coders implementation."""
 from abc import ABC, abstractmethod
 from itertools import groupby
-from typing import List
+from typing import List, Optional
 
 from unidecode import unidecode
 
@@ -8,9 +9,17 @@ DEFAULT_REPACEMENT = {
     "−": "-",  # Dash and hyphen?
     "Ð": "Đ",  # Vietnamese Đ
 }
+"""This is the replacement for characters that have different code points but look alike."""
 
 
 def read_vocab_file(file: str) -> List[str]:
+    """Read vocabulary's characters from a file.
+
+    This function is not used any more.
+
+    Args:
+        file (str): Path to the file that contains the characters.
+    """
     with open(file) as f:
         vocab = f.read()
         vocab = vocab.strip("\r\n\t")
@@ -18,12 +27,39 @@ def read_vocab_file(file: str) -> List[str]:
 
 
 def replace_at(s: str, i: int, r: str) -> str:
-    "Create a new string with one replaced character"
+    """Create a new string with one replaced character.
+
+    Args:
+        s (str): the string to be replaced.
+        i (int): the replace position.
+        r (str): the replacement character.
+
+    Returns:
+        The new string.
+    """
     return f"{s[:i]}{r}{s[i+1:]}"
 
 
 def sanitize(s: str, valid_chars: List[str], replacement=None) -> str:
-    "Remove out-of-vocabularies characters and replace similar characters with one variant"
+    """Sanitize the string before encoding.
+
+    This function removes out-of-vocabulary characters and
+    replaces characters with similar looks but have different
+    code points.
+
+    For some out-of-vocabulary characters, if the de-unicode version
+    of that characters is valid, the de-unicode version is used and
+    the character is not removed from the final string.
+
+    Args:
+        s (str): The string to be sanitized.
+        valid_chars (List[str]): List of valid characters.
+        replacement (optional): A dictionary of character replacement.
+            If not specified, it will be set to :attr:`.DEFAULT_REPACEMENT`.
+
+    Returns:
+        The sanitized string.
+    """
     if replacement is None:
         replacement = DEFAULT_REPACEMENT
 
@@ -106,11 +142,14 @@ def sanitize(s: str, valid_chars: List[str], replacement=None) -> str:
 
 
 class Vocab(ABC):
-    @classmethod
-    def from_file(cls, file):
-        return cls(read_vocab_file(file))
+    """Base vocabulary interface."""
 
-    def __init__(self, chars):
+    def __init__(self, chars: List[str]):
+        """Initialize the vocabulary.
+
+        Args:
+            chars (List[str]): List of characters.
+        """
         special_tokens = self.get_special_tokens()
         for i, token in enumerate(special_tokens):
             setattr(self, f"{token}_id", i)
@@ -123,17 +162,35 @@ class Vocab(ABC):
         self.num_special_tokens = len(special_tokens)
 
     def __len__(self):
+        """Length of the vocabulary, including the special characters."""
         return len(self.all_chars)
 
-    def batch_decode(self, arr):
-        texts = [self.decode(ids) for ids in arr]
+    def batch_decode(self, batch_ids_arr: List[List[int]]):
+        """Decode a batch of indices.
+
+        Args:
+            batch_ids_arr (List[List[int]]): Batch of character index list.
+
+        Returns:
+            List of decoded strings.
+        """
+        texts = [self.decode(ids) for ids in batch_ids_arr]
         return texts
 
-    def batch_encode(self, arr):
-        ids = [self.encode(c) for c in arr]
+    def batch_encode(self, texts):
+        """Encode a list of strings.
+
+        Args:
+            texts (List[str]): List of strings to be encoded.
+
+        Returns:
+            List of character index lists.
+        """
+        ids = [self.encode(c) for c in texts]
         return ids
 
     def __str__(self):
+        """Pretty format the vocab."""
         lines = [
             "Chars: " + "".join(self.chars),
             "Special: " + ", ".join(self.special_tokens),
@@ -141,26 +198,83 @@ class Vocab(ABC):
         return "\n".join(lines)
 
     def __repr__(self):
+        """Pretty format the vocab."""
         return str(self)
 
     @abstractmethod
     def get_special_tokens(self):
+        """Returns a list of special token names.
+
+        Sub-classes of the :class:`Vocab` class need to
+        implement this method themselves. The first special
+        tokens should be a padding-like token.
+
+        Returns:
+            tokens (List[str]): List of special tokens.
+        """
         ...
 
     @abstractmethod
-    def decode(self, seq):
+    def decode(self, seq: List[int]) -> str:
+        """Convert a list of character ids to a string.
+
+        The sub-classes in :class:`Vocab` need to implement
+        this method themselves.
+
+        Args:
+            seq (List[int]): List of character ids.
+
+        Returns:
+            The decode string.
+        """
         ...
 
     @abstractmethod
-    def encode(self, seq, max_length=None):
+    def encode(self, seq: str, max_length: Optional[int] = None) -> List[int]:
+        """Convert a string to a list of supported character indices.
+
+        The sub-classes in :class:`Vocab` need to implement
+        this method themselves.
+
+        Args:
+            seq (str): The string to be encoded.
+            max_length (Optional[int]): The maximum length, if specified,
+                the index list will be truncated to this length. Default is
+                None. This option is not used in the rewrite.
+
+        Returns:
+            The list of character indices.
+        """
         ...
 
 
 class VocabS2S(Vocab):
+    """Vocab for sequence-to-sequence (S2S) encoding.
+
+    See torch's S2S tutorial for more information.
+    Be warned that the models that use this type of
+    coding is prone to hallucination.
+    """
+
     def get_special_tokens(self):
+        """Returns S2S specific special characters.
+
+        Special characters for this vocabulary includes:
+        - padding,
+        - sos (start of sequence),
+        - eos (end of sequence),
+        - other (unknown character).
+        """
         return ["pad", "sos", "eos", "other"]
 
-    def encode(self, chars, max_length=None):
+    def encode(self, chars: str, max_length: Optional[int] = None) -> List[int]:
+        """Encode sequence-to-sequence style.
+
+        The input string is first sanitized before encoding.
+        The encoded sequence replaces every characters with its character
+        indices, and then the sos token is inserted at the beginning,
+        the eos token is inserted at the end.
+        """
         vocab = self.chars
         chars = sanitize(chars, vocab)
         seq = [self.char2index.get(c, self.other_id) for c in chars]
@@ -172,7 +286,14 @@ class VocabS2S(Vocab):
             seq = seq + [self.pad_id] * (max_length - 2 - n)
         return seq
 
-    def decode(self, ids):
+    def decode(self, ids: List[int]) -> str:
+        """Decode sequence-to-sequence style.
+
+        The index of sos and eos token is used to determine the
+        decoding range. Every ids inside that range is converted
+        to characters. The obtained characters is concatenated to
+        obtain the decoded string.
+        """
         last = ids.index(self.eos_id) if self.eos_id in ids else None
         first = ids.index(self.sos_id) if self.sos_id in ids else 0
         if last is not None:
@@ -184,10 +305,29 @@ class VocabS2S(Vocab):
 
 
 class VocabCTC(Vocab):
+    """Connectionist temporal classification (CTC) style vocabulary.
+
+    The model that use this type of vocab may converge very slowly, but
+    the model is rigid and not prone to hallucination.
+
+    See also: https://distill.pub/2017/ctc/
+    """
+
     def get_special_tokens(self):
+        """Returns special CTC tokens.
+
+        The only special token in CTC vocab is the blank character.
+        """
         return ["blank"]
 
     def encode(self, chars):
+        """Encode a string CTC style.
+
+        The input string is first sanitized. After that,
+        every characters is converted to their respective ids.
+        If two consecutive ids are the same, a blank character id
+        is inserted between them.
+        """
         chars = sanitize(chars, self.chars)
         ids = [self.blank_id]
         prev = None
@@ -199,7 +339,16 @@ class VocabCTC(Vocab):
         return ids
 
     def decode(self, ids: List[int]) -> str:
-        "perform Greedy CTC decoding"
+        """Perform decoding CTC style using the greedy algorithm.
 
+        If two consecutive ids are the same, they are collapsed in to
+        one id. The blank id is then removed from the result id list.
+        Finally, the result character id list is converted to character
+        and concatenated to obtain the decoded string.
+
+        The original author of VietOCR observed that OCR typically
+        only has one correct output, therefore beamsearch for OCR
+        is kind of useless.
+        """
         collapsed = [self.index2char[i] for i, _ in groupby(ids) if i != self.blank_id]
         return "".join(collapsed).strip(" ")
