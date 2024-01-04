@@ -1,0 +1,23 @@
+stages:
+  - doc
+
+# runtest:
+#   stage: test
+#   script:
+
+pages:
+  image: python:3.11-slim-bookworm
+  stage: doc
+  only:
+    variables:
+      - $CI_COMMIT_MESSAGE =~ /\[doc\]/ || $CI_COMMIT_MESSAGE =~ /\[docs\]/
+  script:
+    - pip install sphinx
+    - make html
+  artifacts:
+    paths:
+      - docs/build/html
+    untracked: false
+    when: on_success
+    expire_in: 1 day
+  
