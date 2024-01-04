@@ -21,4 +21,5 @@ pages:
     untracked: false
     when: on_success
     expire_in: 1 day
+  publish: docs/build/html
   
