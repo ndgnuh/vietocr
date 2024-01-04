@@ -5,11 +5,14 @@
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+import sys
+
+sys.path.append(".")  # Append current path so that sphinx can import modules
 
 project = "VietOCR Fork"
 copyright = "2022, HungND"
 author = "ndgnuh"
-release = "0.4.22"
+release = "0.4.22"  # @version
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
