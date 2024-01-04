@@ -174,7 +174,7 @@ class OcrTrainer:
         # | Lr scheduler, if available |
         # +----------------------------+
         if config.lr_scheduler is None:
-            self.lr_scheduler = optim.lr_scheduler.ConstantLR(optimizer, factor=1)
+            self.lr_scheduler = optim.lr_scheduler.ConstantLR(self.optimizer, factor=1)
         else:
             lr_scheduler = copy(config.lr_scheduler)
             lr_scheduler_type = lr_scheduler.pop("type")
