@@ -19,6 +19,7 @@ release = "0.4.22"  # @version
 
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
 ]
 
 autodoc_mock_imports = [
