@@ -28,6 +28,7 @@ dsrecords
 opencv-python-headless
 albumentations
 unidecode
+rapidfuzz
 
 # +-----------------------+
 # | Onnx related packages |

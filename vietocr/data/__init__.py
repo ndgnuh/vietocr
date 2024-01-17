@@ -118,6 +118,8 @@ def build_datasets(data_configs, **data_options):
     Args:
         data_configs: Data configuration, can be a string or a list
             of paths to the file that contains the data.
+
+    Keywords:
         **data_options: Options to be passed to OcrDataset.
 
     Return:

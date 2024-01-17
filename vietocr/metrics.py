@@ -44,6 +44,6 @@ def acc_fuzzy(pr: str, gt: str) -> float:
         pr (str): prediction
         gt (str): ground truth
     """
-    from thefuzz import ratio
+    from rapidfuzz.fuzz import ratio
 
     return ratio(pr, gt) / 100

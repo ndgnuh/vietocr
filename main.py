@@ -1,3 +1,4 @@
+#!/bin/env python3
 import sys
 from argparse import ArgumentParser
 
@@ -81,6 +82,7 @@ def download_fonts(args):
 
 @add_action
 def train(args):
+    """Train a model."""
     parser = ArgumentParser()
     help = "path to model configuration file"
     parser.add_argument("--config", "-c", required=True, help=help)
@@ -100,7 +102,29 @@ def train(args):
     trainer.fit()
 
 
+@add_action
+def test(args):
+    """Test a model for accuracy."""
+    parser = ArgumentParser()
+    help = "path to model configuration file"
+    parser.add_argument("--config", "-c", required=True, help=help)
+    help = "if output is set, the metric statistics are written to this file"
+    parser.add_argument("--output", "-o", required=False, help=help)
+    args = parser.parse_args(args)
+
+    # Load config
+    from vietocr.configs import OcrConfig
+
+    config = OcrConfig.from_yaml(args.config)
+
+    # Load test
+    from vietocr.trainer import run_test
+
+    run_test(config, output=args.output)
+
+
 def main():
+    """Entrypoint."""
     parser = ArgumentParser(description="Run `--help` with each intent for details.")
     parser.add_argument("intent", choices=list(actions))
 

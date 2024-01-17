@@ -133,10 +133,16 @@ def prepare_input(
     width = get_width_for_height(orig_width, orig_height, **sizes)
     height = sizes["height"]
 
-    # Resize, normalize and transpose
+    # Resize and normalize
     image = cv2.resize(image, (width, height))
     if normalize:
         image = image.astype("float32") / 255
+
+    # Force RGB
+    if image.ndim == 2:
+        image = np.stack([image, image, image], axis=-1)
+
+    # Transpose to channel first
     if transpose:
         image = image.transpose(2, 0, 1)
     return image
