@@ -258,7 +258,6 @@ class FVTREmbedding(nn.Module):
             # b h w c -> b c h w
             pe = pe.permute([0, 3, 1, 2])
         embeddings = self.dropout(pe + embeddings)
->>>>>>> 51ec6517ecae958c876cd7a5ce8071f7714cad0b
         return embeddings
 
 
