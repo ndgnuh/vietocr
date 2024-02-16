@@ -1,6 +1,12 @@
 import sys
 from argparse import ArgumentParser
 
+try:
+    import icecream
+    icecream.install()
+except ImportError:
+    pass
+
 actions = {}
 
 
