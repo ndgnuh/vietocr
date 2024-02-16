@@ -1,12 +1,96 @@
-from torchvision.transforms import functional as TF
-from einops.layers.torch import Rearrange, Reduce
-from torch.nn import functional as F
-from torch import nn, Tensor
-from typing import Tuple, List
-import torch
 import math
+from typing import List, Optional, Tuple
 
-from ..utils import LocalAttentionMaskProvider2d, DConv2d
+import torch
+from einops.layers.torch import Rearrange, Reduce
+from torch import Tensor, nn
+from torch.nn import functional as F
+from torchvision.transforms import functional as TF
+
+from ..utils import DConv2d, create_local_attention_mask
+
+
+class MultiheadAttention(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        dropout: float = 0.0,
+        batch_first=True,
+        need_weights: bool = False,
+    ):
+        super().__init__()
+        # Make it compat with nn.MultiheadAttentionWeights
+        self.in_proj_weight = nn.Parameter(torch.randn(hidden_size * 3, hidden_size))
+        self.in_proj_bias = nn.Parameter(torch.randn(hidden_size * 3))
+        self.out_proj = nn.modules.linear.NonDynamicallyQuantizableLinear(
+            hidden_size, hidden_size
+        )
+        self.dropout = nn.Dropout(dropout)
+        self.need_weights = need_weights
+        self.num_heads = num_heads
+        self.batch_first = batch_first
+
+    def forward(self, query, key, value, attn_mask=None):
+        # Handle batch dims
+        if self.batch_first:
+            query = query.transpose(0, 1)
+            key = key.transpose(0, 1)
+            value = value.transpose(0, 1)
+
+        # Unpack dimensions
+        tgt_len, bsz, embed_dim = query.size()
+        src_len = key.size(0)
+        num_heads = self.num_heads
+        head_dim = embed_dim // self.num_heads
+        scaling = float(head_dim) ** -0.5
+        assert key.size(0) == value.size(0) and key.size(1) == value.size(1)
+        assert (
+            head_dim * self.num_heads == embed_dim
+        ), "embed_dim must be divisible by num_heads"
+
+        # Input projection
+        q, k, v = F.linear(query, self.in_proj_weight, self.in_proj_bias).chunk(
+            3, dim=-1
+        )
+        q = q * scaling
+
+        # Compute attention weights
+        q = q.contiguous().view(tgt_len, bsz * num_heads, head_dim).transpose(0, 1)
+        k = k.contiguous().view(src_len, bsz * num_heads, head_dim).transpose(0, 1)
+        v = v.contiguous().view(src_len, bsz * num_heads, head_dim).transpose(0, 1)
+        attn_output_weights = torch.bmm(q, k.transpose(1, 2))
+
+        # Apply masks
+        assert list(attn_output_weights.size()) == [bsz * num_heads, tgt_len, src_len]
+        if attn_mask is not None:
+            if attn_mask.dtype == torch.bool:
+                attn_output_weights.masked_fill_(attn_mask, float("-inf"))
+            else:
+                attn_output_weights += attn_mask
+
+        # Apply energy and dropout
+        attn_output_weights = F.softmax(attn_output_weights, dim=-1)
+        attn_output_weights = self.dropout(attn_output_weights)
+        attn_output = torch.bmm(attn_output_weights, v)
+        assert list(attn_output.size()) == [bsz * num_heads, tgt_len, head_dim]
+        attn_output = (
+            attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+        )
+        attn_output = self.out_proj(attn_output)
+
+        # Handle batch dimensions
+        if self.batch_first:
+            attn_output = attn_output.transpose(0, 1)
+
+        if self.need_weights:
+            # average attention weights over heads
+            attn_output_weights = attn_output_weights.view(
+                bsz, num_heads, tgt_len, src_len
+            )
+            return attn_output, attn_output_weights.sum(dim=1) / num_heads
+        else:
+            return attn_output, None
 
 
 def get_conv_layer(deformable: bool):
@@ -17,16 +101,18 @@ class PositionalEncoding(nn.Module):
     def __init__(self, hidden_size, position_dim=-1):
         super().__init__()
         self.position_dim = position_dim
-        inv_freq = torch.exp(torch.arange(0, hidden_size, 2)
-                             * (-math.log(10000.0) / hidden_size))
+        inv_freq = torch.exp(
+            torch.arange(0, hidden_size, 2) * (-math.log(10000.0) / hidden_size)
+        )
         self.register_buffer("inv_freq", inv_freq)
 
     def get_embed(self, inp):
         return torch.stack([inp.sin(), inp.cos()], dim=-1).flatten(-2)
 
     def forward(self, x):
-        position = torch.arange(x.size(self.position_dim),
-                                dtype=x.dtype, device=x.device)
+        position = torch.arange(
+            x.size(self.position_dim), dtype=x.dtype, device=x.device
+        )
         position = position.unsqueeze(1)
         sin = torch.sin(position * self.inv_freq)
         cos = torch.cos(position * self.inv_freq)
@@ -55,8 +141,8 @@ class PositionalEncoding2D(nn.Module):
         wsin = torch.arange(x.size(-1), dtype=x.dtype, device=x.device)
 
         # h, (c / 4) | w, (c / 4)
-        hsin = torch.einsum('i,j->ij', hsin, self.inv_freq)
-        wsin = torch.einsum('i,j->ij', wsin, self.inv_freq)
+        hsin = torch.einsum("i,j->ij", hsin, self.inv_freq)
+        wsin = torch.einsum("i,j->ij", wsin, self.inv_freq)
 
         # h * 1 * (c / 2) | 1 * w * (c / 2)
         hemb = self.get_embed(hsin).unsqueeze(1)
@@ -73,16 +159,15 @@ class PositionalEncoding2D(nn.Module):
 
 
 class ShuffleBlock(nn.Module):
-
     def __init__(self, groups):
         super(ShuffleBlock, self).__init__()
         self.groups = groups
 
     def forward(self, x):
-        '''Channel shuffle: [N,C,H,W] -> [N,g,C/g,H,W] -> [N,C/g,g,H,w] -> [N,C,H,W]'''
+        """Channel shuffle: [N,C,H,W] -> [N,g,C/g,H,W] -> [N,C/g,g,H,w] -> [N,C,H,W]"""
         N, C, H, W = x.size()
         g = self.groups
-        return x.view(N, g, C//g, H, W).permute(0, 2, 1, 3, 4).reshape(N, C, H, W)
+        return x.view(N, g, C // g, H, W).permute(0, 2, 1, 3, 4).reshape(N, C, H, W)
 
 
 class XSin(nn.Module):
@@ -93,8 +178,7 @@ class XSin(nn.Module):
 class LRSCPE(nn.Module):
     def __init__(self, num_channels, position_ids):
         super().__init__()
-        self.lpe = nn.Parameter(torch.zeros(
-            1, num_channels, position_ids[0], 1))
+        self.lpe = nn.Parameter(torch.zeros(1, num_channels, position_ids[0], 1))
         self.spe = PositionalEncoding(num_channels, position_dim=-1)
 
     def forward(self, images):
@@ -113,70 +197,46 @@ class FVTREmbedding(nn.Module):
         image_channel: int = 3,
         patch_size: int = 4,
         deformable: bool = False,
-        norm_type='batchnorm',
-        pe_type='learnable',
+        norm_type="batchnorm",
+        pe_type="learnable",
         dropout: float = 0.1,
     ):
         super().__init__()
         Conv2d = get_conv_layer(deformable)
         self.patch_embedding = nn.Sequential(
-            Conv2d(image_channel, hidden_size,
-                   kernel_size=3, stride=2),
+            Conv2d(image_channel, hidden_size, kernel_size=3, stride=2),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
-            Conv2d(hidden_size, hidden_size,
-                   kernel_size=(3, 1), stride=(2, 1)),
+            Conv2d(hidden_size, hidden_size, kernel_size=(3, 1), stride=(2, 1)),
             nn.InstanceNorm2d(hidden_size),
             nn.ReLU(True),
         )
         # encode position along the width of the image
         self.pe_type = pe_type
-        if pe_type == 'learnable':
+        if pe_type == "learnable":
             self.pe = nn.Parameter(torch.zeros(1, 1, *position_ids))
-        elif pe_type == 'lrsc':
+        elif pe_type == "lrsc":
             self.pe = LRSCPE(hidden_size, position_ids)
-        elif pe_type == 'sin_2d':
+        elif pe_type == "sin_2d":
             self.pe = PositionalEncoding2D(hidden_size)
-        elif pe_type == 'sin_row':
+        elif pe_type == "sin_row":
             self.pe = PositionalEncoding(hidden_size, position_dim=2)
-        elif pe_type == 'none':
+        elif pe_type == "none":
             self.pe = None
         else:
             raise ValueError(
-                f"Unsupported position embedding types {pe_type}: learnable, sin_2d, sin_1d, none")
+                f"Unsupported position embedding types {pe_type}: learnable, sin_2d, sin_1d, none"
+            )
         self.dropout = nn.Dropout(dropout)
+
+        # The good model PE type is learnable and height is 7
+        # ic(self.pe_type)
+        # ic(self.pe.shape)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
         # w * c
-        if self.pe_type == 'learnable':
-            pe = TF.resize(
-                self.pe,
-                (embeddings.size(-2), embeddings.size(-1)),
-                antialias=True,
-            )
-            pe = pe.repeat([embeddings.size(0), embeddings.size(1), 1, 1])
-        elif self.pe_type == 'sin_row':
-            pe = self.pe(embeddings)
-            # h c -> 1 h 1 c
-            pe = pe.unsqueeze(1).unsqueeze(0)
-            # 1 h 1 c -> b h w c
-            pe = pe.repeat([embeddings.size(0), 1, embeddings.size(3), 1])
-            # b h w c -> b c h w
-            pe = pe.permute([0, 3, 1, 2])
-        elif self.pe is None:
-            pe = 0
-        elif self.pe_type == 'lrsc':
-            pe = self.pe(embeddings)
-        else:
-            pe = self.pe(embeddings)
-            # w c -> 1 1 w c
-            pe = pe.unsqueeze(0).unsqueeze(1)
-            # 1 1 w c -> b h w c
-            pe = pe.repeat([embeddings.size(0), embeddings.size(2), 1, 1])
-            # b h w c -> b c h w
-            pe = pe.permute([0, 3, 1, 2])
-        embeddings = self.dropout(pe + embeddings)
+        embeddings = self.dropout(self.pe + embeddings)
         return embeddings
 
 
@@ -208,10 +268,9 @@ class MergingBlock(nn.Module):
     def __init__(self, input_size, output_size, deformable: bool = False):
         super().__init__()
         Conv2d = get_conv_layer(deformable)
-        self.conv = Conv2d(input_size, output_size,
-                           kernel_size=(3, 1),
-                           padding=(1, 0),
-                           stride=(2, 1))
+        self.conv = Conv2d(
+            input_size, output_size, kernel_size=(3, 1), padding=(1, 0), stride=(2, 1)
+        )
         self.norm = nn.LayerNorm(output_size)
 
     def forward(self, x):
@@ -224,22 +283,21 @@ class MergingBlock(nn.Module):
         return out
 
 
-class MixerBlock(nn.Module):
+class MixerCommon(nn.Module):
     def __init__(
         self,
         hidden_size: int,
         num_attention_head: int,
-        local: bool = False,
-        attn_dropout: float = 0.,
+        attn_dropout: float = 0.0,
         dropout: float = 0.1,
     ):
+        # ic(dropout, attn_dropout)
         super().__init__()
-        self.local = local
-        self.mixer = nn.MultiheadAttention(
+        self.mixer = MultiheadAttention(
             hidden_size,
             num_attention_head,
             dropout=attn_dropout,
-            batch_first=True
+            batch_first=True,
         )
         self.mixer_dropout = nn.Dropout(dropout)
         self.mlp = nn.Sequential(
@@ -252,23 +310,38 @@ class MixerBlock(nn.Module):
         self.norm_mixer = nn.LayerNorm(hidden_size)
         self.norm_mlp = nn.LayerNorm(hidden_size)
 
-    def _get_name(self):
-        if self.local:
-            return "LocalMixer"
-        else:
-            return "GlobalMixer"
+    def forward(self, img):
+        # Transpose to patches
+        # b c h w -> b w h c -> h (w h) c
+        c, h, w = img.shape[-3:]
+        x = img.transpose(-1, -3)
+        x = x.reshape(-1, (w * h), c)
 
-    def forward_sa(self, patches, mask):
-        x = self.mixer(patches, patches, patches,
-                       attn_mask=mask, need_weights=False)[0]
+        # Transformer forward
+        x = self.norm_mixer(x)
+        x = self.forward_sa(x, img) + x
+        x = self.norm_mlp(x)
+        x = self.mlp(x) + x
+
+        # Tranpose back to image
+        # b (w h) c -> b w h c -> b c h w
+        x = x.reshape(-1, w, h, c)
+        x = x.transpose(-1, -3)
+
+        return x
+
+
+class GlobalMixer(MixerCommon):
+    def forward_sa(self, x, img):
+        x = self.mixer(x, x, x)[0]
         return self.mixer_dropout(x)
 
-    def forward(self, patches, mask):
-        patches = self.norm_mixer(patches)
-        patches = self.forward_sa(patches, mask) + patches
-        patches = self.norm_mlp(patches)
-        patches = self.mlp(patches) + patches
-        return patches
+
+class LocalMixer(MixerCommon):
+    def forward_sa(self, x, img):
+        mask = create_local_attention_mask(img, 7, 11)
+        x = self.mixer(x, x, x, attn_mask=mask)[0]
+        return self.mixer_dropout(x)
 
 
 class FVTRStage(nn.Module):
@@ -284,25 +357,20 @@ class FVTRStage(nn.Module):
     ):
         super().__init__()
 
+        # ic(locality) 7 x 11
         mixing_blocks = nn.ModuleList()
         self.gen_mask = None
         for local in permutation:
-            if local:
-                self.gen_mask = LocalAttentionMaskProvider2d(locality)
-            block = MixerBlock(
+            options = dict(
                 hidden_size=input_size,
                 num_attention_head=num_attention_head,
-                local=local,
             )
+            block = LocalMixer(**options) if local else GlobalMixer(**options)
             mixing_blocks.append(block)
 
         # merging
         if combine:
-            merging = CombiningBlock(
-                input_size,
-                output_size,
-                num_attention_head
-            )
+            merging = CombiningBlock(input_size, output_size, num_attention_head)
         else:
             merging = MergingBlock(
                 input_size,
@@ -313,45 +381,30 @@ class FVTRStage(nn.Module):
         self.mixing_blocks = mixing_blocks
         self.merging = merging
 
-    def forward(self, image: Tensor):
-        c, h, w = image.shape[-3:]
-        # b c h w -> b w h c -> h (w h) c
-        x = image.transpose(-1, -3)
-        x = x.reshape(-1, (w * h), c)
-        if self.gen_mask is None:
-            mask = None
-        else:
-            mask = self.gen_mask(image)
-
+    def forward(self, x: Tensor):
         for block in self.mixing_blocks:
-            if block.local:
-                x = block(x, mask=mask)
-            else:
-                x = block(x, mask=None)
-
-        # b (w h) c -> b w h c -> b c h w
-        x = x.reshape(-1, w, h, c)
-        x = x.transpose(-1, -3)
+            x = block(x)
 
         x = self.merging(x)
         return x
 
 
 class FVTR(nn.Sequential):
-    def __init__(self,
-                 hidden_sizes: List[int],
-                 output_size: int,
-                 permutations: List[List[int]],
-                 num_attention_heads: List[int],
-                 locality: Tuple[int, int] = (7, 11),
-                 patch_size: int = 4,
-                 image_channel: int = 3,
-                 position_ids: int = (8, 64),
-                 pe_type: bool = 'learnable',
-                 norm_type: str = 'batchnorm',
-                 use_fc: bool = True,
-                 deformable: bool = False,
-                 ):
+    def __init__(
+        self,
+        hidden_sizes: List[int],
+        output_size: int,
+        permutations: List[List[int]],
+        num_attention_heads: List[int],
+        locality: Tuple[int, int] = (7, 11),
+        patch_size: int = 4,
+        image_channel: int = 3,
+        position_ids: int = (8, 64),
+        pe_type: bool = "learnable",
+        norm_type: str = "batchnorm",
+        use_fc: bool = True,
+        deformable: bool = False,
+    ):
         super().__init__()
         self.locality = locality
         self.patch_size = patch_size
@@ -375,7 +428,7 @@ class FVTR(nn.Sequential):
             output_size = hidden_sizes[i + 1]
             permutation = permutations[i]
             num_attention_head = num_attention_heads[i]
-            combine = (i == n_stages - 1)
+            combine = i == n_stages - 1
             stage = FVTRStage(
                 input_size=input_size,
                 output_size=output_size,
@@ -432,7 +485,8 @@ def fvtr_t(output_size, **opts):
         permutations=permutations,
         num_attention_heads=heads,
         hidden_sizes=hidden_sizes,
-        **opts)
+        **opts,
+    )
 
 
 def fvtr_tg(output_size, **opts):
@@ -445,7 +499,8 @@ def fvtr_tg(output_size, **opts):
         permutations=permutations,
         num_attention_heads=heads,
         hidden_sizes=hidden_sizes,
-        **opts)
+        **opts,
+    )
 
 
 def fvtr_s(output_size, **opts):
@@ -461,7 +516,8 @@ def fvtr_s(output_size, **opts):
         permutations=permutations,
         num_attention_heads=heads,
         hidden_sizes=hidden_sizes,
-        **opts)
+        **opts,
+    )
 
 
 def fvtr_b(output_size, **opts):
@@ -477,7 +533,8 @@ def fvtr_b(output_size, **opts):
         permutations=permutations,
         num_attention_heads=heads,
         hidden_sizes=hidden_sizes,
-        **opts)
+        **opts,
+    )
 
 
 def fvtr_l(output_size, **opts):
@@ -493,7 +550,8 @@ def fvtr_l(output_size, **opts):
         permutations=permutations,
         num_attention_heads=heads,
         hidden_sizes=hidden_sizes,
-        **opts)
+        **opts,
+    )
 
 
 models = {
@@ -501,5 +559,5 @@ models = {
     "fvtr_v2_tg": fvtr_tg,
     "fvtr_v2_s": fvtr_s,
     "fvtr_v2_b": fvtr_b,
-    "fvtr_v2_l": fvtr_l
+    "fvtr_v2_l": fvtr_l,
 }
