@@ -235,8 +235,30 @@ class FVTREmbedding(nn.Module):
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
-        # w * c
-        embeddings = self.dropout(self.pe + embeddings)
+        if self.pe_type == 'learnable':
+            pe = self.pe
+        elif self.pe_type == 'sin_row':
+            pe = self.pe(embeddings)
+            # h c -> 1 h 1 c
+            pe = pe.unsqueeze(1).unsqueeze(0)
+            # 1 h 1 c -> b h w c
+            pe = pe.repeat([embeddings.size(0), 1, embeddings.size(3), 1])
+            # b h w c -> b c h w
+            pe = pe.permute([0, 3, 1, 2])
+        elif self.pe is None:
+            pe = 0
+        elif self.pe_type == 'lrsc':
+            pe = self.pe(embeddings)
+        else:
+            pe = self.pe(embeddings)
+            # w c -> 1 1 w c
+            pe = pe.unsqueeze(0).unsqueeze(1)
+            # 1 1 w c -> b h w c
+            pe = pe.repeat([embeddings.size(0), embeddings.size(2), 1, 1])
+            # b h w c -> b c h w
+            pe = pe.permute([0, 3, 1, 2])
+        embeddings = self.dropout(pe + embeddings)
+>>>>>>> 51ec6517ecae958c876cd7a5ce8071f7714cad0b
         return embeddings
 
 
