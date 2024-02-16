@@ -3,7 +3,9 @@ How to train a model
 
 Model configuration
 -------------------
-TBA
+
+.. automodule:: vietocr.configs
+   :members:
 
 Prepare Training data
 ---------------------

@@ -2,11 +2,91 @@
 
 import math
 from functools import cached_property
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
+
+
+class MultiheadSelfAttention(nn.Module):
+    def __init__(self, hidden_size: int, num_heads: int, dropout: float = 0.0):
+        super().__init__()
+        self.in_project = nn.Linear(hidden_size, hidden_size * 3)
+        self.out_project = nn.Linear(hidden_size, hidden_size)
+        self.dropout = nn.Dropout(dropout)
+        self.scaling = float(hidden_size) ** (-0.5)
+        self.num_heads = num_heads
+        self.head_dim = hidden_size // num_heads
+        msg = "Hidden size is not divisable by number of heads"
+        assert hidden_size % num_heads == 0, msg
+
+    def _split_heads(self, x: Tensor):
+        """Split attention heads.
+
+        Args:
+            x: Tensor of shape (batch-size, seq-length, num-heads * head-size).
+
+        Returns:
+            Tensor of shape (batch-size * num-heads, seq-length, head-size).
+        """
+        x = x.reshape(x.size(0), x.size(1), self.num_heads, self.head_dim)
+        n, s, h, d = 0, 1, 2, 3  # batch, length, head, dim
+        x = x.permute(n, h, s, d).flatten(-2)
+        return x
+
+    def _merge_heads(self, x: Tensor):
+        """Merge attention heads.
+
+        Args:
+            x: Tensor of shape (batch-size * num-heads, seq-length, head-size)
+
+        Returns:
+            Tensor of shape (batch-size, seq-length, num-heads * head-size)
+        """
+        x = x.reshape(-1, self.num_heads, x.size(1), self.head_dim)
+        n, h, s, d = 0, 1, 2, 3  # batch, head, length, dim
+        x = x.permute(n, s, h, d).flatten(-2)
+        return x
+
+    def forward(self, x: Tensor, attn_mask: Optional[Tensor] = None):
+        # Dimension resolve
+        bsz, tgt_len, embed_dim = x.shape
+        head_dim = embed_dim // self.num_heads
+        msg = "Hidden size is not divisable by number of heads"
+        assert head_dim * self.num_heads == embed_dim, msg
+
+        # Input projection
+        q, k, v = self.in_project(x).chunk(3, dim=-1)
+        q = q * self.scaling
+
+        # Compute attention weights
+        q = self._split_heads(q)
+        k = self._split_heads(k)
+        v = self._split_heads(v)
+        attn_weights = torch.bmm(q, k.transpose(1, 2))
+        assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, tgt_len]
+
+        # Apply attention mask
+        if attn_mask is not None:
+            if attn_mask.dtype == torch.bool:
+                attn_weights.masked_fill_(attn_mask, float("-inf"))
+            else:
+                attn_weights += attn_mask
+
+        # Apply attention
+        attn_weights = torch.softmax(attn_weights, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+        attn_output = torch.bmm(attn_weights, v)
+
+        # Merge heads and perform projection
+        attn_output = self._merge_heads(attn_output)
+        attn_output = self.out_project(attn_output)
+
+        # Output average attention weights over heads
+        attn_weights = attn_weights.reshape(bsz, self.num_heads, tgt_len, tgt_len)
+        attn_weights = attn_weights.mean(dim=1)
+        return attn_output, attn_weights
 
 
 class LayerNorm2d(nn.LayerNorm):
@@ -174,6 +254,53 @@ class PositionEncoding(nn.Module):
         return pos_embs
 
 
+class WSConv2d(nn.Conv2d):
+    """Weight standardized Convolution layer.
+
+    Ref: https://arxiv.org/abs/1903.10520v2
+    """
+
+    def __init__(self, *args, eps=1e-5, gain=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.eps = eps
+        if gain:
+            self.gain = nn.Parameter(torch.ones(self.out_channels, 1, 1, 1))
+        else:
+            self.gain = 1
+        ks = self.kernel_size
+        self.fan_in = ks[0] * ks[1] * self.in_channels
+
+        self.register_buffer("nweight", torch.ones_like(self.weight))
+
+    def get_weight(self):
+        weight = self.weight
+        fan_in = self.fan_in
+        eps = self.eps
+
+        if self.training:
+            var, mean = torch.var_mean(weight, dim=(1, 2, 3), keepdim=True)
+            # Standardize
+            weight = (weight - mean) / torch.sqrt(var * fan_in + eps)
+            # Ha! Self, gain weight, get it?
+            weight = self.gain * weight
+            self.nweight = weight.clone().detach()
+        else:
+            weight = self.nweight
+        return weight
+
+    def forward(self, x):
+        weight = self.get_weight()
+        return F.conv2d(
+            x,
+            weight=weight,
+            bias=self.bias,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+            stride=self.stride,
+        )
+
+
 class FVTREmbedding(nn.Module):
     def __init__(
         self,
@@ -186,19 +313,17 @@ class FVTREmbedding(nn.Module):
         conv_1 = dict(kernel_size=(3, 1), stride=(2, 1))
         conv_2 = dict(kernel_size=(3, 3), stride=(2, 2))
         self.patch_embedding = nn.Sequential(
-            nn.Conv2d(image_channel, hidden_size, **conv_1),
+            WSConv2d(image_channel, hidden_size, **conv_1),
             nn.ReLU(True),
-            nn.Conv2d(hidden_size, hidden_size, **conv_2),
+            WSConv2d(hidden_size, hidden_size, **conv_2),
             nn.ReLU(True),
         )
         with torch.no_grad():
             img = torch.rand(1, 3, image_height, 128)
             num_hpatch = self.patch_embedding(img).shape[-2]
 
-        self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
-        # self.position_embedding = nn.Parameter(
-        #     torch.rand(1, hidden_size, num_hpatch, 1024)
-        # )
+        # self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
+        self.position_embedding = nn.Parameter(torch.rand(1, 1, num_hpatch, 1))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
@@ -219,6 +344,7 @@ class CombiningBlock(nn.Module):
         super().__init__()
         self.output = nn.Sequential(
             nn.Linear(input_size, output_size),
+            nn.LayerNorm(output_size),
             nn.ReLU(True),
         )
 

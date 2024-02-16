@@ -1,9 +1,11 @@
+import json
 import random
+from collections import defaultdict
 from copy import copy
 from os import makedirs, path
-from pprint import pformat
-from typing import Dict, Optional
+from pprint import pformat, pprint
 
+import numpy as np
 import torch
 from lightning_fabric import Fabric
 from tensorboardX import SummaryWriter
@@ -13,9 +15,9 @@ from torchvision.utils import make_grid
 from tqdm import tqdm
 
 from .configs import OcrConfig
-from .data import build_dataloader
+from .data import build_dataloader, build_datasets
 from .images import prepare_input
-from .metrics import acc_full_sequence, acc_per_char
+from .metrics import acc_full_sequence, acc_fuzzy, acc_per_char
 from .models import OcrModel
 from .vocabs import get_vocab
 
@@ -188,7 +190,7 @@ class OcrTrainer:
             "vocab_size": len(self.vocab),
         }
         self.logger = SummaryWriter()
-        self.logger.add_hparams(hparams, {})
+        self.logger.add_hparams(hparams)
 
         # Load checkpoints if available
         # TODO: load_checkpoint
@@ -315,3 +317,89 @@ class OcrTrainer:
             assert len(config.train_data) > 0, msg
         else:
             assert config.train_data is not None
+
+
+@torch.no_grad()
+def run_test(config: OcrConfig, output: Optional[str]):
+    """Run test on a model.
+
+    Args:
+        config (OcrConfig): Model configuration, the config must contains model weights and test data.
+        output (Optional[str]): If set, the metric statistics will be written to that file. Should be a json file.
+
+    Returns:
+        metrics (dict): A dictionary of accuracy metrics.
+    """
+    assert config.test_data is not None, "Test data is not specified"
+    assert config.weights is not None, "The model weights file is not specified"
+
+    # build model from config
+    vocab = get_vocab(config.vocab, config.type)
+    vocab_size = len(vocab)
+    model = OcrModel(
+        vocab_size,
+        backbone=config.backbone,
+        head=config.head,
+        image_height=config.image_height,
+        image_min_width=config.image_min_width,
+        image_max_width=config.image_max_width,
+    )
+    weights = torch.load(config.weights, map_location="cpu")
+    model.load_state_dict(weights)
+    model = model.eval()
+
+    # build test data
+    preprocess = prepare_input(
+        min_width=config.image_min_width,
+        max_width=config.image_max_width,
+        height=config.image_height,
+        normalize=True,  # Collate fn will normalize the image
+        transpose=True,  # Collate fn will transposes the image
+    )
+    test_data = build_datasets(
+        config.test_data,
+        preprocess=preprocess,
+    )
+
+    # Setup devices
+    fabric = Fabric()
+    model = fabric.setup(model)
+    test_data = fabric.setup_dataloaders(DataLoader(test_data, batch_size=None))
+
+    # Test each samples
+    metrics = defaultdict(list)
+    pbar = tqdm(test_data, "Testing")
+    for image, label in pbar:
+        # forward
+        image = image[None]
+        logits = model(image)[0]
+
+        # post process
+        probits = torch.softmax(logits, axis=-1)
+        scores, indices = torch.max(probits, axis=-1)
+        predict = vocab.decode(indices.cpu().numpy())
+
+        # Metrics
+        metrics["per-char"].append(acc_per_char(predict, label))
+        metrics["full-sequence"].append(acc_full_sequence(predict, label))
+        metrics["fuzzy"].append(acc_fuzzy(predict, label))
+
+        # logging
+        pbar.write("PR: %s" % predict)
+        pbar.write("GT: %s" % label)
+        pbar.set_postfix({k: v[-1] for k, v in metrics.items()})
+
+    # Calculate mean metrics an report
+    metric_stats = dict()
+    for k, v in metrics.items():
+        metric_stats[k] = {}
+        metric_stats[k]["mean"] = np.mean(v)
+        metric_stats[k]["max"] = np.max(v)
+        metric_stats[k]["min"] = np.min(v)
+        metric_stats[k]["std"] = np.std(v)
+    pprint(metric_stats)
+
+    # Write output if specified
+    if output is not None:
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(metric_stats, f, ensure_ascii=False, indent=4)

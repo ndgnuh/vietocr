@@ -110,6 +110,29 @@ def collate_variable_width(samples: List, pad_token_id: int = 0):
     return images, targets, target_lengths
 
 
+def build_datasets(data_configs, **data_options):
+    """Create dataset from configuration.
+
+    This function allow chaining multiple datasets.
+
+    Args:
+        data_configs: Data configuration, can be a string or a list
+            of paths to the file that contains the data.
+
+    Keywords:
+        **data_options: Options to be passed to OcrDataset.
+
+    Return:
+        A  torch's dataset.
+    """
+    if isinstance(data_configs, (tuple, list)):
+        datasets = [load_data(config, **data_options) for config in data_configs]
+        datasets = ConcatDataset(datasets)
+    else:
+        datasets = load_data(data_configs, **data_options)
+    return datasets
+
+
 def build_dataloader(
     data_configs: Union[List, str],
     num_workers: int = 0,
@@ -117,17 +140,20 @@ def build_dataloader(
     shuffle: bool = True,
     **data_options,
 ):
-    # Load dataset(s)
-    if isinstance(data_configs, (tuple, list)):
-        datasets = [load_data(config, **data_options) for config in data_configs]
-        datasets = ConcatDataset(datasets)
-        bare_datasets = [
-            load_data(config, vocab=data_options["vocab"]) for config in data_configs
-        ]
-        bare_datasets = ConcatDataset(bare_datasets)
-    else:
-        datasets = load_data(data_configs, **data_options)
-        bare_datasets = load_data(data_configs, vocab=data_options["vocab"])
+    """Create data loader from configuration.
+
+    Args:
+        data_configs: Data configuration.
+        num_workers: Number of processes for the dataloaders.
+        batch_size: batch size of the data loader.
+        shuffle: whether to shuffle the data, if true, the sampler will do the shuffle using custom rules, not the dataloader.
+
+    Return:
+        A torch's DataLoader.
+    """
+    # Build datasets, bare dataset is used for indexing only
+    datasets = build_datasets(data_configs, **data_options)
+    bare_datasets = build_datasets(data_configs, vocab=data_options["vocab"])
 
     # Sample data with similar widths
     widths = []
