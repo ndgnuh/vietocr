@@ -4,6 +4,7 @@ from collections import defaultdict
 from copy import copy
 from os import makedirs, path
 from pprint import pformat, pprint
+from typing import Optional
 
 import numpy as np
 import torch
@@ -190,7 +191,7 @@ class OcrTrainer:
             "vocab_size": len(self.vocab),
         }
         self.logger = SummaryWriter()
-        self.logger.add_hparams(hparams)
+        # self.logger.add_hparams(hparams)
 
         # Load checkpoints if available
         # TODO: load_checkpoint

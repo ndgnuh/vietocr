@@ -41,3 +41,8 @@ Mình phát hành thư viện này dưới các điều khoản của [Apache 2.
 
 # Liên hệ
 Nếu bạn có bất kì vấn đề gì, vui lòng tạo issue hoặc liên hệ mình tại pbcquoc@gmail.com 
+
+<!-- notes
+- Dùng stride (3, 1) (stride theo chiều dọc ảnh)
+- Khi transpose và dùng WH thay vì HW, CTC với [H, W] KHÔNG train được
+-->

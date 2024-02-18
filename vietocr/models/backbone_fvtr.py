@@ -32,7 +32,7 @@ class MultiheadSelfAttention(nn.Module):
         """
         x = x.reshape(x.size(0), x.size(1), self.num_heads, self.head_dim)
         n, s, h, d = 0, 1, 2, 3  # batch, length, head, dim
-        x = x.permute(n, h, s, d).flatten(-2)
+        x = x.permute(n, h, s, d).flatten(0, 1)
         return x
 
     def _merge_heads(self, x: Tensor):
@@ -126,96 +126,45 @@ class ToImage(nn.Module):
 
 
 def skew(orig_x, padding_value):
-    """shift every row 1 step to right converting columns into diagonals"""
     x = orig_x
-    rest, H, W = x.shape[:-2], x.size(-2), x.size(-1)
+    """shift every row 1 step to right converting columns into diagonals"""
+    B, C, H, W = x.shape
     x = F.pad(x, (0, H), value=padding_value)
-    x = x.reshape(*rest, -1)  # B x C x ML+MM+M
+    x = x.reshape(B, C, -1)  # B x C x ML+MM+M
     x = x[..., :-H]  # B x C x ML+MM
-    x = x.reshape(*rest, H, H + W - 1)  # B x C, M x L+M
-    x = x[..., (W // 2) : -(W // 2) + (W % 2 - 1)]
+    x = x.reshape(B, C, H, H + W - 1)  # B x C, M x L+M
+    x = x[..., (W // 2) : (-(W // 2) + (W % 2 - 1))]
     return x
 
 
-class LocalAttentionMaskProvider2d(nn.Module):
-    def __init__(self, locality):
-        super().__init__()
-        self.locality = locality
-        self.cache = {}
+def create_local_attention_mask(x: torch.Tensor, kh: int, kw: int):
+    """Create an attention mask that only allow attending neighbor tokens.
 
-    @torch.no_grad()
-    def forward(self, x):
-        key = (x.size(-2), x.size(-1))
+    Args:
+        x (Tensor): Image tensor of shape [*, H, W]
+        kh (int): Number of "height" patches to attend
+        kv (int): Number of "width" patches to attend
 
-        if key in self.cache:
-            return self.cache[key]
+    Returns:
+        A mask tensor of shape (H * W).
+    """
+    kernel = torch.zeros(1, 1, kh, kw, dtype=torch.bool, device=x.device)
+    mask = kernel.repeat([x.size(-2), x.size(-1), 1, 1])
 
-        kh, kw = self.locality
-        kernel = torch.zeros(1, 1, kh, kw, dtype=torch.bool, device=x.device)
-        mask = kernel.repeat([x.size(-2), x.size(-1), 1, 1])
+    # H W kh kw -> H kh W kw
+    mask = mask.permute([0, 2, 1, 3])
+    mask = skew(mask, torch.tensor(True))
 
-        # H W kh kw -> H kh W kw
-        mask = mask.permute([0, 2, 1, 3])
-        mask = skew(mask, True)
+    # H kh W kw -> W kw H kh
+    mask = mask.permute([2, 3, 0, 1])
+    mask = skew(mask, torch.tensor(True))
 
-        # H kh W kw -> W kw H kh
-        mask = mask.permute([2, 3, 0, 1])
-        mask = skew(mask, True)
+    # W kw H kh -> H W kh kw
+    mask = mask.permute([2, 0, 3, 1])
+    mask = mask.flatten(2, 3).flatten(0, 1)
 
-        # W kw H kh -> H W kh kw
-        mask = mask.permute([2, 0, 3, 1])
-        mask = mask.flatten(2, 3).flatten(0, 1)
-
-        self.cache[key] = mask
-        return mask
-
-
-class MultiheadSelfAttention(nn.Module):
-    def __init__(self, hidden_size, num_heads: int):
-        super().__init__()
-        head_dims = hidden_size // num_heads
-        self.temperature = head_dims**0.5
-        self.num_heads = num_heads
-        self.head_dims = head_dims
-
-        self.heads = nn.ModuleList()
-        for _ in range(num_heads):
-            head = nn.ModuleDict()
-            head["Q"] = nn.Linear(head_dims, head_dims, bias=False)
-            head["K"] = nn.Linear(head_dims, head_dims, bias=False)
-            head["V"] = nn.Linear(head_dims, head_dims, bias=False)
-            self.heads.append(head)
-
-        self.output = nn.Linear(hidden_size, hidden_size, bias=False)
-
-    def forward_head(self, i, x, attn_mask=None):
-        head = self.heads[i]
-        Q = head["Q"](x)
-        K = head["K"](x)
-        V = head["V"](x)
-        energy = Q.matmul(K.transpose(2, 1))
-        energy = energy - attn_mask
-        energy = torch.softmax(energy / self.temperature, dim=-1)
-        out = energy.matmul(V)
-        return out
-
-    def forward(self, x, attn_mask=None):
-        # Generate a softmax mask if attention mask is not None
-        # otherwise create a no-op mask
-        if attn_mask is not None:
-            zeros = torch.zeros_like(attn_mask)
-            softmax_mask = torch.where(attn_mask, torch.inf, zeros)
-        else:
-            softmax_mask = 0
-
-        # Split and forward each attention head
-        xs = torch.split(x, self.head_dims, dim=-1)
-        xs = [self.forward_head(i, x, softmax_mask) for i, x in enumerate(xs)]
-
-        # Concat heads and output
-        out = torch.cat(xs, dim=-1)
-        out = self.output(out)
-        return out
+    # self.cache[key] = mask
+    return mask
 
 
 class PositionEncoding(nn.Module):
@@ -323,12 +272,12 @@ class FVTREmbedding(nn.Module):
             num_hpatch = self.patch_embedding(img).shape[-2]
 
         # self.position_encodings = PositionEncoding(hidden_size, num_hpatch)
-        self.position_embedding = nn.Parameter(torch.rand(1, 1, num_hpatch, 1))
+        self.position_embeddings = nn.Parameter(torch.rand(1, 1, num_hpatch, 1))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, image):
         embeddings = self.patch_embedding(image)
-        embeddings = self.position_encodings(embeddings) + embeddings
+        embeddings = self.position_embeddings + embeddings
         embeddings = self.dropout(embeddings)
         return embeddings
 
@@ -390,44 +339,47 @@ class MergingBlock(nn.Module):
         return out
 
 
-class MixerBlock(nn.Module):
-    def __init__(
-        self,
-        hidden_size: int,
-        num_attention_head: int,
-        local: bool = False,
-        attn_dropout: float = 0.0,
-        dropout: float = 0.1,
-    ):
+class GlobalMixer(nn.Module):
+    def __init__(self, hidden_size: int, num_attention_head: int, dropout: float = 0.1):
         super().__init__()
-        self.local = local
-        self.mixer = MultiheadSelfAttention(hidden_size, num_attention_head)
-        self.mixer_dropout = nn.Dropout(attn_dropout)
+        self.norm_mixer = nn.LayerNorm(hidden_size)
+        self.mixer = MultiheadSelfAttention(
+            hidden_size,
+            num_attention_head,
+            dropout=dropout,
+        )
+        self.norm_mlp = nn.LayerNorm(hidden_size)
         self.mlp = nn.Sequential(
             nn.Linear(hidden_size, hidden_size * 4),
             nn.ReLU(True),
             nn.Linear(hidden_size * 4, hidden_size),
             nn.Dropout(dropout),
         )
-        self.norm_mixer = nn.LayerNorm(hidden_size)
-        self.norm_mlp = nn.LayerNorm(hidden_size)
 
-    def _get_name(self):
-        if self.local:
-            return "LocalMixer"
-        else:
-            return "GlobalMixer"
+    def get_attention_mask(self, x):
+        """Global attention, returns nothing."""
+        return None
 
-    def forward_sa(self, patches, mask):
-        x = self.mixer(patches, attn_mask=mask)
-        return self.mixer_dropout(x)
+    def forward(self, x):
+        # Generate attention mask
+        mask = self.get_attention_mask(x)
 
-    def forward(self, patches, mask):
-        patches = self.forward_sa(patches, mask) + patches
-        patches = self.norm_mixer(patches)
-        patches = self.mlp(patches) + patches
-        patches = self.norm_mlp(patches)
-        return patches
+        # Convert to sequence of patches
+        B, C, H, W = x.shape
+        x = x.reshape(B, C, H * W).transpose(1, 2)
+
+        # Forward transformer block
+        x = x + self.mixer(self.norm_mixer(x), mask)[0]
+        x = x + self.mlp(self.norm_mlp(x))
+
+        # Revert to image
+        x = x.transpose(1, 2).reshape(B, C, H, W)
+        return x
+
+class LocalMixer(GlobalMixer):
+    def get_attention_mask(self, x):
+        mask = create_local_attention_mask(x, 7, 11)
+        return mask
 
 
 class FVTRStage(nn.Module):
@@ -445,13 +397,8 @@ class FVTRStage(nn.Module):
         mixing_blocks = nn.ModuleList()
         self.gen_mask = None
         for local in permutation:
-            if local:
-                self.gen_mask = LocalAttentionMaskProvider2d(locality)
-            block = MixerBlock(
-                hidden_size=input_size,
-                num_attention_head=num_attention_head,
-                local=local,
-            )
+            MixerUnit = LocalMixer if local else GlobalMixer
+            block = MixerUnit(input_size, num_attention_head)
             mixing_blocks.append(block)
 
         # merging
@@ -468,22 +415,9 @@ class FVTRStage(nn.Module):
         self.to_image = ToImage()
         self.to_fiber = ToFiber()
 
-    def forward(self, image: Tensor):
-        x, size = self.to_fiber(image)
-
-        if self.gen_mask is None:
-            mask = None
-        else:
-            mask = self.gen_mask(image)
-
+    def forward(self, x: Tensor):
         for block in self.mixing_blocks:
-            if block.local:
-                x = block(x, mask=mask)
-            else:
-                x = block(x, mask=None)
-
-        # b (w h) c -> b w h c -> b c h w
-        x = self.to_image(x, size)
+            x = block(x)
         x = self.merging(x)
         return x
 
